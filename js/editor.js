@@ -4,9 +4,9 @@ export class PhotoEditor {
     constructor(canvas) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d');
-        this.originalImg = null;  // 16MP+ Orijinal
-        this.previewImg = null;   // 1000px Akıcı Önizleme
-        this.activeImg = null;    // O an çizilen resim referansı
+        this.originalImg = null;
+        this.previewImg = null;
+        this.activeImg = null;
         this.noisePattern = null;
 
         this.resetSettings();
@@ -20,7 +20,8 @@ export class PhotoEditor {
             saturation: 0,
             warmth: 0,
             vignette: 0,
-            swirl: 0, // Helios Swirly Bokeh (0 - 100)
+            swirl: 0,
+            chromatic: 0, // Renk Saçılması (0 - 100)
             preset: 'none'
         };
     }
@@ -42,10 +43,8 @@ export class PhotoEditor {
         this.noisePattern = this.ctx.createPattern(noiseCanvas, 'repeat');
     }
 
-    // GÜVENLİ ASYNC YÜKLEME: .onload her zaman .src'den önce tanımlanır
     loadImage(img, callback) {
         this.originalImg = img;
-
         const maxDim = 1000;
         let w = img.width;
         let h = img.height;
@@ -96,7 +95,80 @@ export class PhotoEditor {
         rotatedImg.src = tempCanvas.toDataURL('image/jpeg');
     }
 
-    // KUSURSUZ OPAK BOKEH MOTORU (Radial Mask & Spin Blur)
+    // DONANIM HIZLANDIRMALI KROMATİK ABERSAYON (GPU Channel Shifting)
+    applyChromaticAberration(intensity) {
+        if (intensity === 0) return;
+
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        // Çözünürlüğe duyarlı dinamik kayma miktarı (Max genliğin %1.2'si)
+        const shift = (intensity / 100) * (w * 0.012);
+
+        // 1. Kırmızı Kanal Tuvali (Sola Kaymış)
+        const redCanvas = document.createElement('canvas');
+        redCanvas.width = w;
+        redCanvas.height = h;
+        const rCtx = redCanvas.getContext('2d');
+        rCtx.drawImage(this.canvas, -shift, 0);
+        rCtx.globalCompositeOperation = 'multiply';
+        rCtx.fillStyle = '#ff0000';
+        rCtx.fillRect(0, 0, w, h);
+
+        // 2. Cyan Kanal Tuvali (Sağa Kaymış)
+        const cyanCanvas = document.createElement('canvas');
+        cyanCanvas.width = w;
+        cyanCanvas.height = h;
+        const cCtx = cyanCanvas.getContext('2d');
+        cCtx.drawImage(this.canvas, shift, 0);
+        cCtx.globalCompositeOperation = 'multiply';
+        cCtx.fillStyle = '#00ffff';
+        cCtx.fillRect(0, 0, w, h);
+
+        // 3. Kanalları screen harmanlamasıyla ana ekranda birleştir (Sıfır Piksel Döngüsü!)
+        this.ctx.save();
+        this.ctx.clearRect(0, 0, w, h);
+        this.ctx.drawImage(redCanvas, 0, 0);
+        this.ctx.globalCompositeOperation = 'screen';
+        this.ctx.drawImage(cyanCanvas, 0, 0);
+        this.ctx.restore();
+    }
+
+    // CINESTILL 800T KIRMIZI HALASYON (Highlights Detection & Screen Glow)
+    applyHalation() {
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+
+        // 1. Parlak Işıkları İzole Et (Highlight Mask)
+        const hlCanvas = document.createElement('canvas');
+        hlCanvas.width = w;
+        hlCanvas.height = h;
+        const hlCtx = hlCanvas.getContext('2d');
+        hlCtx.drawImage(this.canvas, 0, 0);
+        hlCtx.globalCompositeOperation = 'difference';
+        hlCtx.filter = 'brightness(0.25) contrast(2.5) grayscale(100%)';
+        hlCtx.drawImage(this.canvas, 0, 0);
+
+        // 2. Işıkları CineStill Kırmızısına Boya ve Flulaştır
+        const glowCanvas = document.createElement('canvas');
+        glowCanvas.width = w;
+        glowCanvas.height = h;
+        const gCtx = glowCanvas.getContext('2d');
+        
+        const blurSize = Math.max(8, Math.round(w * 0.015)); // Çözünürlükle ölçeklenen blur
+        gCtx.filter = `blur(${blurSize}px) brightness(1.5)`;
+        gCtx.drawImage(hlCanvas, 0, 0);
+        gCtx.globalCompositeOperation = 'source-in';
+        gCtx.fillStyle = '#ff3300'; // Sınırda patlayan gaz kırmızısı
+        gCtx.fillRect(0, 0, w, h);
+
+        // 3. Haleyi orijinal görselin üzerine mühürle
+        this.ctx.save();
+        this.ctx.globalCompositeOperation = 'screen';
+        this.ctx.globalAlpha = 0.40;
+        this.ctx.drawImage(glowCanvas, 0, 0);
+        this.ctx.restore();
+    }
+
     applySwirlyBokeh(intensity) {
         if (intensity === 0) return;
 
@@ -111,11 +183,10 @@ export class PhotoEditor {
         swirlCanvas.height = h;
         const sCtx = swirlCanvas.getContext('2d');
 
-        // Önce sızıntıyı önlemek için zemine %100 opak keskin görüntüyü basıyoruz
         sCtx.drawImage(this.canvas, 0, 0);
 
         const steps = 4; 
-        const angleStep = (intensity / 100) * 1.8; // Maksimum 7.2 derecelik dairesel bükülme
+        const angleStep = (intensity / 100) * 1.8; 
         
         sCtx.globalAlpha = 0.25; 
         for (let i = -steps; i <= steps; i++) {
@@ -128,7 +199,6 @@ export class PhotoEditor {
         }
         sCtx.globalAlpha = 1.0;
 
-        // Maske tuvali (Merkez şeffaf, kenarlar opak siyah)
         const maskCanvas = document.createElement('canvas');
         maskCanvas.width = w;
         maskCanvas.height = h;
@@ -141,7 +211,6 @@ export class PhotoEditor {
         mCtx.fillStyle = grad;
         mCtx.fillRect(0, 0, w, h);
 
-        // Birleştirme tuvali
         const blendCanvas = document.createElement('canvas');
         blendCanvas.width = w;
         blendCanvas.height = h;
@@ -151,7 +220,6 @@ export class PhotoEditor {
         bCtx.globalCompositeOperation = 'destination-in';
         bCtx.drawImage(maskCanvas, 0, 0);
 
-        // Sonucu ana tuvale giydiriyoruz
         this.ctx.save();
         this.ctx.drawImage(blendCanvas, 0, 0);
         this.ctx.restore();
@@ -198,9 +266,19 @@ export class PhotoEditor {
             this.ctx.restore();
         }
 
-        // Helios bükülmesi renk ve pozlama katmanlarından hemen sonra, grenden önce tetiklenir
+        // 1. Optik Kusur: Helios Swirl
         if (this.settings.swirl > 0) {
             this.applySwirlyBokeh(this.settings.swirl);
+        }
+
+        // 2. Optik Kusur: Chromatic Aberration
+        if (this.settings.chromatic > 0) {
+            this.applyChromaticAberration(this.settings.chromatic);
+        }
+
+        // 3. Film Etkisi: CineStill Halation (Yalnızca cinestill seçildiğinde otomatik devreye girer)
+        if (this.settings.preset === 'cinestill') {
+            this.applyHalation();
         }
 
         const activeNoise = preset.noise || 0;

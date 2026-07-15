@@ -82,7 +82,7 @@
                 </div>
             </div>
 
-            <div class="bg-m3Surface p-4 rounded-2xl border border-m3Border space-y-3">
+            <<div class="bg-m3Surface p-4 rounded-2xl border border-m3Border space-y-3">
                 <span class="text-[9px] block text-m3Red/60 font-mono tracking-wider">BANYO REÇETELERİ (PRESETS)</span>
                 <div class="grid grid-cols-2 gap-2">
                     <button data-preset="none" class="btn-preset bg-m3RedDark border border-m3Red p-2 rounded-xl text-xs font-bold">Orijinal</button>
@@ -91,6 +91,8 @@
                     <button data-preset="reze" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">CSM Reze</button>
                     <button data-preset="vampir" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">Vampir 🩸</button>
                     <button data-preset="gotik" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">Gotik ❄️</button>
+                    <button data-preset="nordic" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">Leica Nordic 🌾</button>
+                    <button data-preset="cinestill" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">CineStill 800T 🎬</button>
                 </div>
             </div>
 
@@ -131,10 +133,18 @@
 
                 <div class="space-y-1 border-t border-m3Border/40 pt-2">
                     <div class="flex justify-between text-[10px] font-mono text-amber-500">
-                        <span>🌀 HELIOS SWIRL (BOKEH)</span>
+                        <span>🌀 HELIOS SWIRL</span>
                         <span id="val-swirl">0</span>
                     </div>
                     <input type="range" id="slider-swirl" min="0" max="100" value="0" class="w-full">
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-mono text-amber-500">
+                        <span>⚡ CHROMATIC ABERRATION</span>
+                        <span id="val-chromatic">0</span>
+                    </div>
+                    <input type="range" id="slider-chromatic" min="0" max="100" value="0" class="w-full">
                 </div>
 
                 <div class="space-y-1">
@@ -145,7 +155,6 @@
                     <input type="range" id="slider-vignette" min="0" max="100" value="0" class="w-full">
                 </div>
             </div>
-
             <button id="btn-save" disabled class="w-full bg-emerald-950/20 border border-emerald-900/30 text-emerald-800/50 py-3 rounded-xl text-xs font-bold tracking-wider transition-colors disabled:opacity-30 disabled:pointer-events-none">
                 💾 FULL-RES GÖRSELİ KAYDET (16MP+)
             </button>

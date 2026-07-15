@@ -10,12 +10,15 @@ const btnSave = document.getElementById('btn-save');
 const placeholder = document.getElementById('no-image-placeholder');
 const canvas = document.getElementById('editor-canvas');
 
+// app.js içindeki slider listesini bu şekilde güncelle:
+
 const sliders = {
     exposure: document.getElementById('slider-exposure'),
     contrast: document.getElementById('slider-contrast'),
     saturation: document.getElementById('slider-saturation'),
     warmth: document.getElementById('slider-warmth'),
     swirl: document.getElementById('slider-swirl'),
+    chromatic: document.getElementById('slider-chromatic'), // Yeni
     vignette: document.getElementById('slider-vignette')
 };
 
