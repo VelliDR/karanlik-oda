@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#FF8A80">
+    <title>Karanlık Oda</title>
+    <link rel="manifest" href="./manifest.json">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        m3Bg: '#121318',
+                        m3Surface: '#1A1B20',
+                        m3Red: '#FF8A80',
+                        m3RedDark: '#3D1A1A',
+                        m3Border: '#2E1A1A'
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background-color: #121318;
+            overscroll-behavior: none;
+        }
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            background: #2E1A1A;
+            height: 4px;
+            border-radius: 2px;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            background: #FF8A80;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="text-m3Red min-h-screen flex flex-col justify-between">
+
+    <header class="p-4 border-b border-m3Border flex justify-between items-center bg-m3Bg">
+        <div class="text-center w-full">
+            <h1 class="text-sm font-bold tracking-widest uppercase">🧪 LAB: KARANLIK ODA</h1>
+            <p class="text-[9px] text-m3Red/60 font-mono mt-0.5">Real-time Preview • Helios Matrix Studio</p>
+        </div>
+    </header>
+
+    <main class="flex-1 grid grid-cols-1 lg:grid-cols-3 p-4 gap-4 max-w-6xl mx-auto w-full items-start overflow-y-auto">
+        
+        <div class="lg:col-span-2 bg-m3Surface p-2 rounded-2xl border border-m3Border flex flex-col justify-center items-center min-h-[300px] lg:h-[550px] relative">
+            <canvas id="editor-canvas" class="max-w-full max-h-[280px] lg:max-h-[500px] rounded-xl shadow-2xl bg-black/50"></canvas>
+            <div id="no-image-placeholder" class="absolute inset-0 flex flex-col justify-center items-center text-center p-6 bg-m3Surface/90 rounded-2xl">
+                <span class="text-3xl mb-2">📸</span>
+                <p class="text-xs font-bold">Banyo edilecek bir JPG fotoğraf yükleyin</p>
+                <p class="text-[9px] text-m3Red/50 mt-1 font-mono">16MP+ Görseller için Akıllı Önizleme Aktif</p>
+            </div>
+        </div>
+
+        <div class="space-y-4">
+            
+            <div class="bg-m3Surface p-4 rounded-2xl border border-m3Border space-y-3">
+                <input type="file" id="file-input" accept="image/jpeg, image/jpg" class="hidden">
+                <div class="flex gap-2">
+                    <button id="btn-upload" class="flex-1 bg-m3RedDark border border-m3Border hover:bg-red-950/30 py-2.5 rounded-xl text-xs font-semibold tracking-wider transition-colors">
+                        📂 Fotoğraf Seç
+                    </button>
+                    <button id="btn-rotate" disabled class="border border-m3Border hover:bg-m3RedDark p-2.5 rounded-xl text-xs disabled:opacity-30">
+                        🔄 Döndür
+                    </button>
+                    <button id="btn-reset" disabled class="border border-m3Border hover:bg-m3RedDark p-2.5 rounded-xl text-xs disabled:opacity-30">
+                        ↩️ Sıfırla
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-m3Surface p-4 rounded-2xl border border-m3Border space-y-3">
+                <span class="text-[9px] block text-m3Red/60 font-mono tracking-wider">BANYO REÇETELERİ (PRESETS)</span>
+                <div class="grid grid-cols-2 gap-2">
+                    <button data-preset="none" class="btn-preset bg-m3RedDark border border-m3Red p-2 rounded-xl text-xs font-bold">Orijinal</button>
+                    <button data-preset="sb" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">Moriyama S/B</button>
+                    <button data-preset="analog" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">Kodak Portra</button>
+                    <button data-preset="reze" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">CSM Reze</button>
+                    <button data-preset="vampir" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">Vampir 🩸</button>
+                    <button data-preset="gotik" class="btn-preset bg-m3Bg border border-m3Border hover:border-m3Red p-2 rounded-xl text-xs">Gotik ❄️</button>
+                </div>
+            </div>
+
+            <div class="bg-m3Surface p-4 rounded-2xl border border-m3Border space-y-3">
+                <span class="text-[9px] block text-m3Red/60 font-mono tracking-wider">SLIDERS & HELIOS OPTICS</span>
+                
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-mono">
+                        <span>POZLAMA</span>
+                        <span id="val-exposure">0</span>
+                    </div>
+                    <input type="range" id="slider-exposure" min="-100" max="100" value="0" class="w-full">
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-mono">
+                        <span>KONTRAST</span>
+                        <span id="val-contrast">0</span>
+                    </div>
+                    <input type="range" id="slider-contrast" min="-100" max="100" value="0" class="w-full">
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-mono">
+                        <span>DOYGUNLUK</span>
+                        <span id="val-saturation">0</span>
+                    </div>
+                    <input type="range" id="slider-saturation" min="-100" max="100" value="0" class="w-full">
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-mono">
+                        <span>SICAKLIK</span>
+                        <span id="val-warmth">0</span>
+                    </div>
+                    <input type="range" id="slider-warmth" min="-100" max="100" value="0" class="w-full">
+                </div>
+
+                <div class="space-y-1 border-t border-m3Border/40 pt-2">
+                    <div class="flex justify-between text-[10px] font-mono text-amber-500">
+                        <span>🌀 HELIOS SWIRL (BOKEH)</span>
+                        <span id="val-swirl">0</span>
+                    </div>
+                    <input type="range" id="slider-swirl" min="0" max="100" value="0" class="w-full">
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-[10px] font-mono">
+                        <span>VİNYET</span>
+                        <span id="val-vignette">0</span>
+                    </div>
+                    <input type="range" id="slider-vignette" min="0" max="100" value="0" class="w-full">
+                </div>
+            </div>
+
+            <button id="btn-save" disabled class="w-full bg-emerald-950/20 border border-emerald-900/30 text-emerald-800/50 py-3 rounded-xl text-xs font-bold tracking-wider transition-colors disabled:opacity-30 disabled:pointer-events-none">
+                💾 FULL-RES GÖRSELİ KAYDET (16MP+)
+            </button>
+        </div>
+    </main>
+
+    <footer class="text-center text-[9px] text-m3Red/40 font-mono py-2 bg-m3Bg">
+        foton-darkroom v2.1
+    </footer>
+
+    <script type="module" src="./js/app.js"></script>
+</body>
+</html>

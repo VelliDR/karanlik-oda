@@ -1,0 +1,21 @@
+{
+  "short_name": "Karanlık Oda",
+  "name": "Foton Karanlık Oda PWA",
+  "icons": [
+    {
+      "src": "./icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "./icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "./index.html",
+  "background_color": "#121318",
+  "theme_color": "#FF8A80",
+  "display": "standalone",
+  "orientation": "any"
+}
