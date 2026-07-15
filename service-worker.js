@@ -1,19 +1,28 @@
-const CACHE_NAME = 'karanlik-oda-v2.0';
+const CACHE_NAME = 'karanlik-oda-v2.3';
 const ASSETS = [
     './',
     './index.html',
     './manifest.json',
     './js/app.js',
     './js/editor.js',
-    './js/presets.js',
-    'https://cdn.tailwindcss.com' // Tasarımın dağda çökmemesi için önbelleğe alındı
+    './js/presets.js'
 ];
 
 self.addEventListener('install', (e) => {
     e.waitUntil(
-        caches.open(CACHE_NAME).then(cache => {
-            console.log('📦 Karanlık oda önbelleğe alınıyor...');
-            return cache.addAll(ASSETS);
+        caches.open(CACHE_NAME).then(async (cache) => {
+            console.log('📦 Kritik yerel dosyalar önbelleğe alınıyor...');
+            // Önce kendi yerel dosyalarımızı kesin olarak önbelleğe alıyoruz
+            await cache.addAll(ASSETS);
+            
+            // Harici Tailwind CDN'ini hata fırlatıp sistemi çökertmeyecek şekilde esnek ekliyoruz
+            try {
+                const tailwindRequest = new Request('https://cdn.tailwindcss.com', { mode: 'cors' });
+                await cache.add(tailwindRequest);
+                console.log('🎨 Tailwind CDN başarıyla önbelleklendi.');
+            } catch (err) {
+                console.warn('⚠️ Tailwind önbelleğe alınamadı ama yerel sistem aktif:', err);
+            }
         }).then(() => self.skipWaiting())
     );
 });
