@@ -97,7 +97,7 @@ function handleSave() {
     btnSave.innerText = "💾 İŞLENİYOR (16MP+)...";
     btnSave.disabled = true;
 
-    // Arayüzün donmasını engellemek için tarayıcıyı mikro saniye dinlendirip arka planda işliyoruz
+    // Arayüzün donmasını engellemek için hafif bir gecikme veriyoruz
     setTimeout(() => {
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = editor.originalImg.width;
@@ -114,20 +114,29 @@ function handleSave() {
         editor.initNoisePattern();
         editor.render();
 
-        const link = document.createElement('a');
-        link.download = `foton_darkroom_highres_${Date.now()}.jpg`;
-        link.href = exportCanvas.toDataURL('image/jpeg', 0.95);
-        link.click();
+        // toDataURL yerine toBlob kullanarak belleği (RAM) koruyoruz
+        exportCanvas.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.download = `foton_darkroom_highres_${Date.now()}.jpg`;
+            link.href = url;
+            link.click();
 
-        // Çizim bittikten sonra hafif önizleme ayarlarına geri dönüyoruz
-        editor.canvas = currentCanvas;
-        editor.ctx = currentCtx;
-        editor.activeImg = currentActive;
-        editor.initNoisePattern();
-        editor.render();
+            // İndirme tetiklendikten sonra geçici URL'i iptal edip RAM'i boşaltıyoruz
+            URL.revokeObjectURL(url);
 
-        btnSave.innerText = "💾 FULL-RES GÖRSELİ KAYDET (16MP+)";
-        btnSave.disabled = false;
+            // Ekran önizlemesi için düşük çözünürlüklü ayarlara geri dönüyoruz
+            editor.canvas = currentCanvas;
+            editor.ctx = currentCtx;
+            editor.activeImg = currentActive;
+            editor.initNoisePattern();
+            editor.render();
+
+            btnSave.innerText = "💾 FULL-RES GÖRSELİ KAYDET (16MP+)";
+            btnSave.disabled = false;
+        }, 'image/jpeg', 0.95);
+
     }, 50);
 }
 

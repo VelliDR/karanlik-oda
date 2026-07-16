@@ -96,42 +96,56 @@ export class PhotoEditor {
     }
 
     // DONANIM HIZLANDIRMALI KROMATİK ABERSAYON (GPU Channel Shifting)
-    applyChromaticAberration(intensity) {
-        if (intensity === 0) return;
+  applyChromaticAberration(intensity) {
+    if (intensity === 0) return;
 
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-        // Çözünürlüğe duyarlı dinamik kayma miktarı (Max genliğin %1.2'si)
-        const shift = (intensity / 100) * (w * 0.012);
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const shift = (intensity / 100) * (w * 0.012);
 
-        // 1. Kırmızı Kanal Tuvali (Sola Kaymış)
-        const redCanvas = document.createElement('canvas');
-        redCanvas.width = w;
-        redCanvas.height = h;
-        const rCtx = redCanvas.getContext('2d');
-        rCtx.drawImage(this.canvas, -shift, 0);
-        rCtx.globalCompositeOperation = 'multiply';
-        rCtx.fillStyle = '#ff0000';
-        rCtx.fillRect(0, 0, w, h);
+    // Kenarlardaki renk yırtılmasını kurtarmak için dinamik mikro ölçekleme katsayısı
+    const scale = 1 + (shift / w) * 2;
 
-        // 2. Cyan Kanal Tuvali (Sağa Kaymış)
-        const cyanCanvas = document.createElement('canvas');
-        cyanCanvas.width = w;
-        cyanCanvas.height = h;
-        const cCtx = cyanCanvas.getContext('2d');
-        cCtx.drawImage(this.canvas, shift, 0);
-        cCtx.globalCompositeOperation = 'multiply';
-        cCtx.fillStyle = '#00ffff';
-        cCtx.fillRect(0, 0, w, h);
+    // 1. Kırmızı Kanal Tuvali (Sola Kaymış + Ölçeklenmiş)
+    const redCanvas = document.createElement('canvas');
+    redCanvas.width = w;
+    redCanvas.height = h;
+    const rCtx = redCanvas.getContext('2d');
+    
+    rCtx.save();
+    rCtx.translate(w / 2, h / 2);
+    rCtx.scale(scale, scale);
+    rCtx.drawImage(this.canvas, -w / 2 - shift, -h / 2);
+    rCtx.restore();
+    
+    rCtx.globalCompositeOperation = 'multiply';
+    rCtx.fillStyle = '#ff0000';
+    rCtx.fillRect(0, 0, w, h);
 
-        // 3. Kanalları screen harmanlamasıyla ana ekranda birleştir (Sıfır Piksel Döngüsü!)
-        this.ctx.save();
-        this.ctx.clearRect(0, 0, w, h);
-        this.ctx.drawImage(redCanvas, 0, 0);
-        this.ctx.globalCompositeOperation = 'screen';
-        this.ctx.drawImage(cyanCanvas, 0, 0);
-        this.ctx.restore();
-    }
+    // 2. Cyan Kanal Tuvali (Sağa Kaymış + Ölçeklenmiş)
+    const cyanCanvas = document.createElement('canvas');
+    cyanCanvas.width = w;
+    cyanCanvas.height = h;
+    const cCtx = cyanCanvas.getContext('2d');
+    
+    cCtx.save();
+    cCtx.translate(w / 2, h / 2);
+    cCtx.scale(scale, scale);
+    cCtx.drawImage(this.canvas, -w / 2 + shift, -h / 2);
+    cCtx.restore();
+    
+    cCtx.globalCompositeOperation = 'multiply';
+    cCtx.fillStyle = '#00ffff';
+    cCtx.fillRect(0, 0, w, h);
+
+    // 3. Kanalları birleştir
+    this.ctx.save();
+    this.ctx.clearRect(0, 0, w, h);
+    this.ctx.drawImage(redCanvas, 0, 0);
+    this.ctx.globalCompositeOperation = 'screen';
+    this.ctx.drawImage(cyanCanvas, 0, 0);
+    this.ctx.restore();
+}
 
     // CINESTILL 800T KIRMIZI HALASYON (Highlights Detection & Screen Glow)
     applyHalation() {
@@ -169,61 +183,63 @@ export class PhotoEditor {
         this.ctx.restore();
     }
 
-    applySwirlyBokeh(intensity) {
-        if (intensity === 0) return;
+ applySwirlyBokeh(intensity) {
+    if (intensity === 0) return;
 
-        const w = this.canvas.width;
-        const h = this.canvas.height;
-        const cx = w / 2;
-        const cy = h / 2;
-        const maxRadius = Math.min(w, h) * 0.35; 
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const maxRadius = Math.min(w, h) * 0.35; 
 
-        const swirlCanvas = document.createElement('canvas');
-        swirlCanvas.width = w;
-        swirlCanvas.height = h;
-        const sCtx = swirlCanvas.getContext('2d');
+    const swirlCanvas = document.createElement('canvas');
+    swirlCanvas.width = w;
+    swirlCanvas.height = h;
+    const sCtx = swirlCanvas.getContext('2d');
 
-        sCtx.drawImage(this.canvas, 0, 0);
+    sCtx.drawImage(this.canvas, 0, 0);
 
-        const steps = 4; 
-        const angleStep = (intensity / 100) * 1.8; 
-        
-        sCtx.globalAlpha = 0.25; 
-        for (let i = -steps; i <= steps; i++) {
-            if (i === 0) continue;
-            sCtx.save();
-            sCtx.translate(cx, cy);
-            sCtx.rotate(i * angleStep * Math.PI / 180);
-            sCtx.drawImage(this.canvas, -cx, -cy);
-            sCtx.restore();
-        }
-        sCtx.globalAlpha = 1.0;
-
-        const maskCanvas = document.createElement('canvas');
-        maskCanvas.width = w;
-        maskCanvas.height = h;
-        const mCtx = maskCanvas.getContext('2d');
-
-        const grad = mCtx.createRadialGradient(cx, cy, maxRadius * 0.4, cx, cy, maxRadius * 1.3);
-        grad.addColorStop(0, 'rgba(0,0,0,0)'); 
-        grad.addColorStop(1, 'rgba(0,0,0,1)'); 
-
-        mCtx.fillStyle = grad;
-        mCtx.fillRect(0, 0, w, h);
-
-        const blendCanvas = document.createElement('canvas');
-        blendCanvas.width = w;
-        blendCanvas.height = h;
-        const bCtx = blendCanvas.getContext('2d');
-        
-        bCtx.drawImage(swirlCanvas, 0, 0);
-        bCtx.globalCompositeOperation = 'destination-in';
-        bCtx.drawImage(maskCanvas, 0, 0);
-
-        this.ctx.save();
-        this.ctx.drawImage(blendCanvas, 0, 0);
-        this.ctx.restore();
+    // Yüksek çözünürlükte (Save modu) GPU'yu korumak için adım sayısını azaltıyoruz
+    const steps = w > 2000 ? 2 : 4; 
+    // Adım sayısına göre açıyı dengeliyoruz ki görseldeki bükülme gücü aynı kalsın
+    const angleStep = (intensity / 100) * (w > 2000 ? 3.6 : 1.8); 
+    
+    sCtx.globalAlpha = 0.25; 
+    for (let i = -steps; i <= steps; i++) {
+        if (i === 0) continue;
+        sCtx.save();
+        sCtx.translate(cx, cy);
+        sCtx.rotate(i * angleStep * Math.PI / 180);
+        sCtx.drawImage(this.canvas, -cx, -cy);
+        sCtx.restore();
     }
+    sCtx.globalAlpha = 1.0;
+
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = w;
+    maskCanvas.height = h;
+    const mCtx = maskCanvas.getContext('2d');
+
+    const grad = mCtx.createRadialGradient(cx, cy, maxRadius * 0.4, cx, cy, maxRadius * 1.3);
+    grad.addColorStop(0, 'rgba(0,0,0,0)'); 
+    grad.addColorStop(1, 'rgba(0,0,0,1)'); 
+
+    mCtx.fillStyle = grad;
+    mCtx.fillRect(0, 0, w, h);
+
+    const blendCanvas = document.createElement('canvas');
+    blendCanvas.width = w;
+    blendCanvas.height = h;
+    const bCtx = blendCanvas.getContext('2d');
+    
+    bCtx.drawImage(swirlCanvas, 0, 0);
+    bCtx.globalCompositeOperation = 'destination-in';
+    bCtx.drawImage(maskCanvas, 0, 0);
+
+    this.ctx.save();
+    this.ctx.drawImage(blendCanvas, 0, 0);
+    this.ctx.restore();
+}
 
     render() {
         if (!this.activeImg) return;
