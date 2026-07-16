@@ -1,8 +1,3 @@
-import { calculateNpfAdvanced, evaluateOptics, calculateSensorRecipe, calculatePixelPitch } from './exposure.js';
-import { getSunTimes, getMoonStatus, estimateBortleOffline, getCelestialPositions } from './astro.js';
-import { getRandomVibe } from './vibe.js';
-import { getWeatherData, getNearbySpots, calculateDistance } from './api.js';
-
 import { PhotoEditor } from './editor.js';
 
 let editor;
