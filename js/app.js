@@ -1,3 +1,8 @@
+import { calculateNpfAdvanced, evaluateOptics, calculateSensorRecipe, calculatePixelPitch } from './exposure.js';
+import { getSunTimes, getMoonStatus, estimateBortleOffline, getCelestialPositions } from './astro.js';
+import { getRandomVibe } from './vibe.js';
+import { getWeatherData, getNearbySpots, calculateDistance } from './api.js';
+
 import { PhotoEditor } from './editor.js';
 
 let editor;
@@ -10,15 +15,13 @@ const btnSave = document.getElementById('btn-save');
 const placeholder = document.getElementById('no-image-placeholder');
 const canvas = document.getElementById('editor-canvas');
 
-// app.js içindeki slider listesini bu şekilde güncelle:
-
 const sliders = {
     exposure: document.getElementById('slider-exposure'),
     contrast: document.getElementById('slider-contrast'),
     saturation: document.getElementById('slider-saturation'),
     warmth: document.getElementById('slider-warmth'),
     swirl: document.getElementById('slider-swirl'),
-    chromatic: document.getElementById('slider-chromatic'), // Yeni
+    chromatic: document.getElementById('slider-chromatic'),
     vignette: document.getElementById('slider-vignette')
 };
 
@@ -54,28 +57,104 @@ function initApp() {
     });
 }
 
-// ASYNC GÜVENLİ GÖRSEL SEÇİCİ: Yarış durumlarını (Race conditions) engeller
-function handleFileLoad(e) {
-    const file = e.target.files[0];
+// ---------------------------------------------------------------------
+// KORUMALI FORMAT GEÇİŞ MATRİSİ (Çevrimdışı HEIC & PNG Yaması)
+// ---------------------------------------------------------------------
+
+async function loadHeicScript() {
+    if (window.heic2any) return; 
+    return new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = "./js/heic2any.min.js"; // Yerel dizindeki cached dosya
+        script.onload = resolve;
+        script.onerror = () => reject(new Error("Çevrimdışı HEIF çözücü yüklenemedi."));
+        document.head.appendChild(script);
+    });
+}
+
+function flattenTransparentImage(img) {
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = img.width;
+    tempCanvas.height = img.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    
+    // Şeffaf alanları düz beyaza boyayarak JPEG patlamasını engelle
+    tempCtx.fillStyle = '#FFFFFF';
+    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+    tempCtx.drawImage(img, 0, 0);
+    
+    const flattenedImg = new Image();
+    flattenedImg.src = tempCanvas.toDataURL('image/jpeg', 0.95);
+
+    // Bellek Sızıntısı Koruması: Geçici tuval boyutunu sıfırlayıp VRAM'i boşalt
+    tempCanvas.width = 0;
+    tempCanvas.height = 0;
+
+    return flattenedImg;
+}
+
+async function handleFileLoad(e) {
+    let file = e.target.files[0];
     if (!file) return;
+
+    const fileType = file.type;
+    const fileName = file.name.toLowerCase();
+    const isHeic = fileName.endsWith('.heic') || fileName.endsWith('.heif') || fileType === 'image/heic' || fileType === 'image/heif';
+
+    if (isHeic) {
+        const originalBtnText = btnUpload.innerText;
+        btnUpload.innerText = "🔄 HEIF ÇÖZÜMLENİYOR...";
+        btnUpload.disabled = true;
+
+        try {
+            await loadHeicScript();
+            const convertedBlob = await heic2any({
+                blob: file,
+                toType: "image/jpeg",
+                quality: 0.90
+            });
+            file = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
+        } catch (error) {
+            console.error("HEIF Çözümleme Hatası:", error);
+            alert("HEIF görseli çözümlenirken sistem tökezledi.");
+            btnUpload.innerText = originalBtnText;
+            btnUpload.disabled = false;
+            return;
+        }
+
+        btnUpload.innerText = originalBtnText;
+        btnUpload.disabled = false;
+    }
 
     const reader = new FileReader();
     reader.onload = (event) => {
-        const img = new Image();
+        let img = new Image();
         img.onload = () => {
             placeholder.classList.add('hidden');
             
-            editor.loadImage(img, () => {
-                btnRotate.disabled = false;
-                btnReset.disabled = false;
-                btnSave.disabled = false;
-                btnSave.className = "w-full bg-emerald-900 border border-emerald-800 text-emerald-400 py-3 rounded-xl text-xs font-bold tracking-wider transition-colors cursor-pointer";
-            });
+            // Eğer dosya transparan PNG ise kapıda banyo et
+            if (fileType === 'image/png' || fileName.endsWith('.png')) {
+                img = flattenTransparentImage(img);
+                img.onload = () => {
+                    editor.loadImage(img, enableSaveUI);
+                };
+            } else {
+                editor.loadImage(img, enableSaveUI);
+            }
         };
         img.src = event.target.result;
     };
     reader.readAsDataURL(file);
 }
+
+function enableSaveUI() {
+    btnRotate.disabled = false;
+    btnReset.disabled = false;
+    btnSave.disabled = false;
+    btnSave.className = "w-full bg-emerald-900 border border-emerald-800 text-emerald-400 py-3 rounded-xl text-xs font-bold tracking-wider transition-colors cursor-pointer";
+}
+
+// ---------------------------------------------------------------------
 
 function handleReset() {
     editor.resetSettings();
@@ -97,7 +176,6 @@ function handleSave() {
     btnSave.innerText = "💾 İŞLENİYOR (16MP+)...";
     btnSave.disabled = true;
 
-    // Arayüzün donmasını engellemek için hafif bir gecikme veriyoruz
     setTimeout(() => {
         const exportCanvas = document.createElement('canvas');
         exportCanvas.width = editor.originalImg.width;
@@ -114,7 +192,6 @@ function handleSave() {
         editor.initNoisePattern();
         editor.render();
 
-        // toDataURL yerine toBlob kullanarak belleği (RAM) koruyoruz
         exportCanvas.toBlob((blob) => {
             const url = URL.createObjectURL(blob);
             
@@ -123,10 +200,12 @@ function handleSave() {
             link.href = url;
             link.click();
 
-            // İndirme tetiklendikten sonra geçici URL'i iptal edip RAM'i boşaltıyoruz
             URL.revokeObjectURL(url);
 
-            // Ekran önizlemesi için düşük çözünürlüklü ayarlara geri dönüyoruz
+            // VRAM Temizliği: Yüksek çözünürlüklü tuvali imha et
+            exportCanvas.width = 0;
+            exportCanvas.height = 0;
+
             editor.canvas = currentCanvas;
             editor.ctx = currentCtx;
             editor.activeImg = currentActive;

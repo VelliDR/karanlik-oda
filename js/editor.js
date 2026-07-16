@@ -21,7 +21,7 @@ export class PhotoEditor {
             warmth: 0,
             vignette: 0,
             swirl: 0,
-            chromatic: 0, // Renk Saçılması (0 - 100)
+            chromatic: 0, 
             preset: 'none'
         };
     }
@@ -41,6 +41,10 @@ export class PhotoEditor {
         }
         ctx.putImageData(imgData, 0, 0);
         this.noisePattern = this.ctx.createPattern(noiseCanvas, 'repeat');
+        
+        // VRAM Serbest Bırakma
+        noiseCanvas.width = 0;
+        noiseCanvas.height = 0;
     }
 
     loadImage(img, callback) {
@@ -75,6 +79,10 @@ export class PhotoEditor {
             if (callback) callback();
         };
         pImg.src = tempCanvas.toDataURL('image/jpeg', 0.85);
+
+        // VRAM Serbest Bırakma
+        tempCanvas.width = 0;
+        tempCanvas.height = 0;
     }
 
     rotate() {
@@ -93,66 +101,66 @@ export class PhotoEditor {
             this.loadImage(rotatedImg);
         };
         rotatedImg.src = tempCanvas.toDataURL('image/jpeg');
+
+        // VRAM Serbest Bırakma
+        tempCanvas.width = 0;
+        tempCanvas.height = 0;
     }
 
-    // DONANIM HIZLANDIRMALI KROMATİK ABERSAYON (GPU Channel Shifting)
-  applyChromaticAberration(intensity) {
-    if (intensity === 0) return;
+    applyChromaticAberration(intensity) {
+        if (intensity === 0) return;
 
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const shift = (intensity / 100) * (w * 0.012);
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const shift = (intensity / 100) * (w * 0.012);
+        const scale = 1 + (shift / w) * 2;
 
-    // Kenarlardaki renk yırtılmasını kurtarmak için dinamik mikro ölçekleme katsayısı
-    const scale = 1 + (shift / w) * 2;
+        const redCanvas = document.createElement('canvas');
+        redCanvas.width = w;
+        redCanvas.height = h;
+        const rCtx = redCanvas.getContext('2d');
+        
+        rCtx.save();
+        rCtx.translate(w / 2, h / 2);
+        rCtx.scale(scale, scale);
+        rCtx.drawImage(this.canvas, -w / 2 - shift, -h / 2);
+        rCtx.restore();
+        
+        rCtx.globalCompositeOperation = 'multiply';
+        rCtx.fillStyle = '#ff0000';
+        rCtx.fillRect(0, 0, w, h);
 
-    // 1. Kırmızı Kanal Tuvali (Sola Kaymış + Ölçeklenmiş)
-    const redCanvas = document.createElement('canvas');
-    redCanvas.width = w;
-    redCanvas.height = h;
-    const rCtx = redCanvas.getContext('2d');
-    
-    rCtx.save();
-    rCtx.translate(w / 2, h / 2);
-    rCtx.scale(scale, scale);
-    rCtx.drawImage(this.canvas, -w / 2 - shift, -h / 2);
-    rCtx.restore();
-    
-    rCtx.globalCompositeOperation = 'multiply';
-    rCtx.fillStyle = '#ff0000';
-    rCtx.fillRect(0, 0, w, h);
+        const cyanCanvas = document.createElement('canvas');
+        cyanCanvas.width = w;
+        cyanCanvas.height = h;
+        const cCtx = cyanCanvas.getContext('2d');
+        
+        cCtx.save();
+        cCtx.translate(w / 2, h / 2);
+        cCtx.scale(scale, scale);
+        cCtx.drawImage(this.canvas, -w / 2 + shift, -h / 2);
+        cCtx.restore();
+        
+        cCtx.globalCompositeOperation = 'multiply';
+        cCtx.fillStyle = '#00ffff';
+        cCtx.fillRect(0, 0, w, h);
 
-    // 2. Cyan Kanal Tuvali (Sağa Kaymış + Ölçeklenmiş)
-    const cyanCanvas = document.createElement('canvas');
-    cyanCanvas.width = w;
-    cyanCanvas.height = h;
-    const cCtx = cyanCanvas.getContext('2d');
-    
-    cCtx.save();
-    cCtx.translate(w / 2, h / 2);
-    cCtx.scale(scale, scale);
-    cCtx.drawImage(this.canvas, -w / 2 + shift, -h / 2);
-    cCtx.restore();
-    
-    cCtx.globalCompositeOperation = 'multiply';
-    cCtx.fillStyle = '#00ffff';
-    cCtx.fillRect(0, 0, w, h);
+        this.ctx.save();
+        this.ctx.clearRect(0, 0, w, h);
+        this.ctx.drawImage(redCanvas, 0, 0);
+        this.ctx.globalCompositeOperation = 'screen';
+        this.ctx.drawImage(cyanCanvas, 0, 0);
+        this.ctx.restore();
 
-    // 3. Kanalları birleştir
-    this.ctx.save();
-    this.ctx.clearRect(0, 0, w, h);
-    this.ctx.drawImage(redCanvas, 0, 0);
-    this.ctx.globalCompositeOperation = 'screen';
-    this.ctx.drawImage(cyanCanvas, 0, 0);
-    this.ctx.restore();
-}
+        // VRAM Temizliği
+        redCanvas.width = 0; redCanvas.height = 0;
+        cyanCanvas.width = 0; cyanCanvas.height = 0;
+    }
 
-    // CINESTILL 800T KIRMIZI HALASYON (Highlights Detection & Screen Glow)
     applyHalation() {
         const w = this.canvas.width;
         const h = this.canvas.height;
 
-        // 1. Parlak Işıkları İzole Et (Highlight Mask)
         const hlCanvas = document.createElement('canvas');
         hlCanvas.width = w;
         hlCanvas.height = h;
@@ -162,84 +170,89 @@ export class PhotoEditor {
         hlCtx.filter = 'brightness(0.25) contrast(2.5) grayscale(100%)';
         hlCtx.drawImage(this.canvas, 0, 0);
 
-        // 2. Işıkları CineStill Kırmızısına Boya ve Flulaştır
         const glowCanvas = document.createElement('canvas');
         glowCanvas.width = w;
         glowCanvas.height = h;
         const gCtx = glowCanvas.getContext('2d');
         
-        const blurSize = Math.max(8, Math.round(w * 0.015)); // Çözünürlükle ölçeklenen blur
+        const blurSize = Math.max(8, Math.round(w * 0.015)); 
         gCtx.filter = `blur(${blurSize}px) brightness(1.5)`;
         gCtx.drawImage(hlCanvas, 0, 0);
         gCtx.globalCompositeOperation = 'source-in';
-        gCtx.fillStyle = '#ff3300'; // Sınırda patlayan gaz kırmızısı
+        gCtx.fillStyle = '#ff3300'; 
         gCtx.fillRect(0, 0, w, h);
 
-        // 3. Haleyi orijinal görselin üzerine mühürle
         this.ctx.save();
         this.ctx.globalCompositeOperation = 'screen';
         this.ctx.globalAlpha = 0.40;
         this.ctx.drawImage(glowCanvas, 0, 0);
         this.ctx.restore();
+
+        // VRAM Temizliği
+        hlCanvas.width = 0; hlCanvas.height = 0;
+        glowCanvas.width = 0; glowCanvas.height = 0;
     }
 
- applySwirlyBokeh(intensity) {
-    if (intensity === 0) return;
+    applySwirlyBokeh(intensity) {
+        if (intensity === 0) return;
 
-    const w = this.canvas.width;
-    const h = this.canvas.height;
-    const cx = w / 2;
-    const cy = h / 2;
-    const maxRadius = Math.min(w, h) * 0.35; 
+        const w = this.canvas.width;
+        const h = this.canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const maxRadius = Math.min(w, h) * 0.35; 
 
-    const swirlCanvas = document.createElement('canvas');
-    swirlCanvas.width = w;
-    swirlCanvas.height = h;
-    const sCtx = swirlCanvas.getContext('2d');
+        const swirlCanvas = document.createElement('canvas');
+        swirlCanvas.width = w;
+        swirlCanvas.height = h;
+        const sCtx = swirlCanvas.getContext('2d');
 
-    sCtx.drawImage(this.canvas, 0, 0);
+        sCtx.drawImage(this.canvas, 0, 0);
 
-    // Yüksek çözünürlükte (Save modu) GPU'yu korumak için adım sayısını azaltıyoruz
-    const steps = w > 2000 ? 2 : 4; 
-    // Adım sayısına göre açıyı dengeliyoruz ki görseldeki bükülme gücü aynı kalsın
-    const angleStep = (intensity / 100) * (w > 2000 ? 3.6 : 1.8); 
-    
-    sCtx.globalAlpha = 0.25; 
-    for (let i = -steps; i <= steps; i++) {
-        if (i === 0) continue;
-        sCtx.save();
-        sCtx.translate(cx, cy);
-        sCtx.rotate(i * angleStep * Math.PI / 180);
-        sCtx.drawImage(this.canvas, -cx, -cy);
-        sCtx.restore();
+        const steps = w > 2000 ? 2 : 4; 
+        const angleStep = (intensity / 100) * (w > 2000 ? 3.6 : 1.8); 
+        
+        sCtx.globalAlpha = 0.25; 
+        for (let i = -steps; i <= steps; i++) {
+            if (i === 0) continue;
+            sCtx.save();
+            sCtx.translate(cx, cy);
+            sCtx.rotate(i * angleStep * Math.PI / 180);
+            sCtx.drawImage(this.canvas, -cx, -cy);
+            sCtx.restore();
+        }
+        sCtx.globalAlpha = 1.0;
+
+        const maskCanvas = document.createElement('canvas');
+        maskCanvas.width = w;
+        maskCanvas.height = h;
+        const mCtx = maskCanvas.getContext('2d');
+
+        const grad = mCtx.createRadialGradient(cx, cy, maxRadius * 0.4, cx, cy, maxRadius * 1.3);
+        grad.addColorStop(0, 'rgba(0,0,0,0)'); 
+        grad.addColorStop(1, 'rgba(0,0,0,1)'); 
+
+        mCtx.fillStyle = grad;
+        mCtx.fillRect(0, 0, w, h);
+
+        const blendCanvas = document.createElement('canvas');
+        blendCanvas.width = w;
+        blendCanvas.height = h;
+        const bCtx = blendCanvas.getContext('2d');
+        
+        bCtx.drawImage(swirlCanvas, 0, 0);
+        bCtx.globalCompositeOperation = 'destination-in';
+        bCtx.drawImage(maskCanvas, 0, 0);
+
+        this.ctx.save();
+        this.ctx.drawImage(blendCanvas, 0, 0);
+        this.ctx.restore();
+
+        // VRAM Temizliği
+        swirlCanvas.width = 0; swirlCanvas.height = 0;
+        maskCanvas.width = 0; maskCanvas.height = 0;
+        blendCanvas.width = 0; blendCanvas.height = 0;
     }
-    sCtx.globalAlpha = 1.0;
-
-    const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = w;
-    maskCanvas.height = h;
-    const mCtx = maskCanvas.getContext('2d');
-
-    const grad = mCtx.createRadialGradient(cx, cy, maxRadius * 0.4, cx, cy, maxRadius * 1.3);
-    grad.addColorStop(0, 'rgba(0,0,0,0)'); 
-    grad.addColorStop(1, 'rgba(0,0,0,1)'); 
-
-    mCtx.fillStyle = grad;
-    mCtx.fillRect(0, 0, w, h);
-
-    const blendCanvas = document.createElement('canvas');
-    blendCanvas.width = w;
-    blendCanvas.height = h;
-    const bCtx = blendCanvas.getContext('2d');
-    
-    bCtx.drawImage(swirlCanvas, 0, 0);
-    bCtx.globalCompositeOperation = 'destination-in';
-    bCtx.drawImage(maskCanvas, 0, 0);
-
-    this.ctx.save();
-    this.ctx.drawImage(blendCanvas, 0, 0);
-    this.ctx.restore();
-}
 
     render() {
         if (!this.activeImg) return;
@@ -282,17 +295,14 @@ export class PhotoEditor {
             this.ctx.restore();
         }
 
-        // 1. Optik Kusur: Helios Swirl
         if (this.settings.swirl > 0) {
             this.applySwirlyBokeh(this.settings.swirl);
         }
 
-        // 2. Optik Kusur: Chromatic Aberration
         if (this.settings.chromatic > 0) {
             this.applyChromaticAberration(this.settings.chromatic);
         }
 
-        // 3. Film Etkisi: CineStill Halation (Yalnızca cinestill seçildiğinde otomatik devreye girer)
         if (this.settings.preset === 'cinestill') {
             this.applyHalation();
         }

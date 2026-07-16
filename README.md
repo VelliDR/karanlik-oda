@@ -1,25 +1,47 @@
-# 🧪 Foton: Karanlık Oda (PWA)
+🧪 Foton: Karanlık Oda
 
-Lightroom aboneliğiyle uğraşmak istemeyenler için tasarlanmış, tarayıcı tabanlı, donanım hızlandırmalı ve %100 çevrimdışı çalışan mobil fotoğraf banyo istasyonu. 
+Abonelik ücretlerinden, hantal arayüzlerden ve fotoğrafları uzak sunuculara yükleme zorunluluğundan sıkılanlar için geliştirilmiş, %100 çevrimdışı (offline-first) çalışan tarayıcı tabanlı bir banyo istasyonu.
 
-Fotoğraflarınız cihazınızdan asla dışarı çıkmaz, sunucuya yüklenmez. Her şey tamamen telefonunuzun/tabletinizin ekran kartı (GPU) üzerinde işlenir.
+Fotoğraflarınız cihazınızdan çıkmaz, analiz edilmez veya bir buluta yüklenmez. Tüm işleme mantığı tamamen tarayıcınızın içinde, cihazınızın kendi donanım gücüyle (GPU/RAM) çalışır.
+🌀 Neden Karanlık Oda?
 
-## 🌀 Öne Çıkan Özellikler
+Modern dijital kameralar jilet gibi keskin, kusursuz ama bir o kadar da ruhsuz fotoğraflar üretiyor. Karanlık Oda, optik fiziğin ve kimyanın o "kusurlu ama sıcak" estetiğini (Wabi-Sabi) dijital görsellere geri kazandırmayı amaçlar.
+Karakteristik Özellikler
 
-* **Helios Swirl (Dönen Bokeh):** Efsanevi Helios 44M-4 lensin o karakteristik, merkez dışı dairesel bükülme kusurunu dijital olarak taklit edin.
-* **Chromatic Aberration (Renk Saçılması):** Açık diyaframlı eski manuel lenslerin kenarlarda yarattığı o sinsi kırmızı/cyan faz kaymasını kontrol edin.
-* **Leica Nordic Cool:** Gölgeleri İskandinav soğukluğuna bükerken, cilt tonlarını yaşamsal sıcaklığında koruyan split-toning portre modu.
-* **CineStill 800T Halation:** Gece fotoğraflarında parlak ışıkların etrafında analog sinema filmi karakterinde kırmızı haleler oluşturun.
-* **Akıllı Önizleme Motoru:** Devasa 16MP+ görselleri düzenlerken telefonunuz donmaz. Düzenlemeyi 60 FPS akıcı önizleme üzerinde yapar, kaydederken orijinal çözünürlüğe tek seferde uygular.
+    Helios Swirl (Dönen Bokeh): Efsanevi Rus merceği Helios 44M-4'ün kenar bölgelerindeki mekanik vinyet ve astigmatizm hatasını (dairesel bükülme) matematiksel olarak simüle eder.
 
-## 📱 Telefon/Tablete Kurulum (PWA)
+    CineStill 800T Halation (Kırmızı Parlama): Sinema filmlerinin arkasındaki ışık emici katmanın (rem-jet) temizlenmesiyle oluşan o ikonik kimyasal reaksiyonu taklit eder. Parlak ışıkları izole eder, CineStill kırmızısına boyar ve yumuşatarak görselin üzerine mühürler.
 
-Bu proje internet gerektirmeden çalışacak şekilde tasarlanmıştır. Dağ başında, uçak modunda bile kullanabilirsiniz.
+    Chromatic Aberration (Renk Sapması): Eski manuel lenslerin odak kaçırma hatasını, kırmızı ve cyan kanallarını milimetrik olarak GPU üzerinde kaydırıp ölçeklendirerek canlandırır.
 
-1.  Uygulama linkine mobil tarayıcınızdan (Chrome/Safari) girin.
-2.  Tarayıcı seçeneklerinden **"Uygulamayı Yükle"** veya **"Ana Ekrana Ekle"** seçeneğine dokunun.
-3.  Uygulama artık telefonunuzun menüsüne bağımsız bir uygulama olarak eklenecektir.
+    Leica Nordic Cool: Gölgeleri dondurucu bir İskandinav lacivertine bükerken, cilt tonlarını bozmadan sıcak tutan özel bir split-toning reçetesi.
 
-## 🛠️ Lisans & Felsefe
+    Çevrimdışı HEIF / HEIC Desteği (Yeni!): iPhone ve güncel Android cihazların yüksek verimli sıkıştırma formatlarını, internet bağlantınız olmasa bile cihaz içinde otomatik olarak JPEG standardına dönüştürür.
 
-Bu proje, pahalı yazılım aboneliklerine karşı duran **özgür ve bağımsız bir karanlık oda** denemesidir.
+    PNG Şeffaflık Koruması: Transparan görsellerin JPEG formatına dönüştürülürken arkasında oluşan o çirkin siyah lekeleri otomatik olarak beyaz zeminle yamalar.
+
+⚡ Hafiflik ve VRAM Optimizasyonu
+
+Uygulama, mobil tarayıcıların acımasız bellek sınırlarına göre optimize edilmiştir:
+
+    Çift Kanallı Akış: 16MP+ görselleri düzenlerken cihazınız kasmaz. Düzenlemeyi hızlıca 1000px sınırındaki akıcı bir önizleme üzerinde yaparsınız; kaydet butonuna bastığınızda işlemler orijinal çözünürlüğe tek seferde uygulanır.
+
+    VRAM Kalkanı: İşlemler sırasında arka planda oluşturulan tüm geçici tuval (canvas) elementleri, işi bittiği an bellek genişlikleri sıfırlanarak imha edilir. Bu sayede tarayıcı sekmesinin çökmesi engellenir.
+
+    Lazy Loading: HEIC dönüştürücü kütüphanesi sadece siz bir HEIC fotoğraf yüklediğinizde diskten (Service Worker) okunarak belleğe alınır; uygulamanın ilk açılış hızını asla etkilemez.
+
+📱 Kurulum (PWA)
+
+Karanlık Oda, tamamen çevrimdışı çalışabilen bir Progressive Web App (PWA) uygulamasıdır. Dağ başında, uçakta veya şebekenin çekmediği herhangi bir yerde kullanabilirsiniz.
+
+    Uygulamayı mobil tarayıcınızda (Chrome veya Safari) açın.
+
+    Tarayıcı menüsünden "Ana Ekrana Ekle" veya "Uygulamayı Yükle" seçeneğine dokunun.
+
+    Uygulama, telefonunuzun menüsüne bağımsız bir uygulama olarak eklenecektir.
+
+🛠️ Geliştirici Notu
+
+Bu proje, ticari kaygılardan uzak, sadece analog camların kusurlarını ve o eski kimyasal banyo sürecini dijital dünyada yaşatmak isteyen bir fotoğraf severin kişisel denemesidir.
+
+Katkıda bulunmak, yeni reçeteler eklemek veya optik formülleri geliştirmek isterseniz PR göndermekten çekinmeyin.

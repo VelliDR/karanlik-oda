@@ -1,21 +1,20 @@
-const CACHE_NAME = 'karanlik-oda-v2.3';
+const CACHE_NAME = 'karanlik-oda-v2.6';
 const ASSETS = [
     './',
     './index.html',
     './manifest.json',
     './js/app.js',
     './js/editor.js',
-    './js/presets.js'
+    './js/presets.js',
+    './js/heic2any.min.js' // ARTIK ÇEVRİMDIŞI ÖNBELLEKTE!
 ];
 
 self.addEventListener('install', (e) => {
     e.waitUntil(
         caches.open(CACHE_NAME).then(async (cache) => {
             console.log('📦 Kritik yerel dosyalar önbelleğe alınıyor...');
-            // Önce kendi yerel dosyalarımızı kesin olarak önbelleğe alıyoruz
             await cache.addAll(ASSETS);
             
-            // Harici Tailwind CDN'ini hata fırlatıp sistemi çökertmeyecek şekilde esnek ekliyoruz
             try {
                 const tailwindRequest = new Request('https://cdn.tailwindcss.com', { mode: 'cors' });
                 await cache.add(tailwindRequest);
