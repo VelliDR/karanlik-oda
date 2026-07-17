@@ -9,6 +9,10 @@ export class PhotoEditor {
         this.activeImg = null;
         this.noisePattern = null;
 
+        // KORUMA YAMASI: Bellek şişmesini önleyen sabit tuval havuzu
+        this._cachedCanvas1 = document.createElement('canvas');
+        this._cachedCanvas2 = document.createElement('canvas');
+
         this.resetSettings();
         this.initNoisePattern();
     }
@@ -24,6 +28,19 @@ export class PhotoEditor {
             chromatic: 0, 
             preset: 'none'
         };
+    }
+
+    // Boyut değişimi aynı zamanda tuvali (context state dahil) otomatik temizler
+    _getTempCanvas1(w, h) {
+        this._cachedCanvas1.width = w;
+        this._cachedCanvas1.height = h;
+        return this._cachedCanvas1;
+    }
+
+    _getTempCanvas2(w, h) {
+        this._cachedCanvas2.width = w;
+        this._cachedCanvas2.height = h;
+        return this._cachedCanvas2;
     }
 
     initNoisePattern() {
@@ -42,7 +59,6 @@ export class PhotoEditor {
         ctx.putImageData(imgData, 0, 0);
         this.noisePattern = this.ctx.createPattern(noiseCanvas, 'repeat');
         
-        // VRAM Serbest Bırakma
         noiseCanvas.width = 0;
         noiseCanvas.height = 0;
     }
@@ -63,9 +79,7 @@ export class PhotoEditor {
             }
         }
 
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = w;
-        tempCanvas.height = h;
+        const tempCanvas = this._getTempCanvas1(w, h);
         const tempCtx = tempCanvas.getContext('2d');
         tempCtx.drawImage(img, 0, 0, w, h);
 
@@ -78,19 +92,15 @@ export class PhotoEditor {
             this.render();
             if (callback) callback();
         };
-        pImg.src = tempCanvas.toDataURL('image/jpeg', 0.85);
-
-        // VRAM Serbest Bırakma
-        tempCanvas.width = 0;
-        tempCanvas.height = 0;
+        
+        // JPEG %100 kalite ile kayıpsız transfer
+        pImg.src = tempCanvas.toDataURL('image/jpeg', 1.0);
     }
 
     rotate() {
         if (!this.originalImg) return;
 
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = this.originalImg.height;
-        tempCanvas.height = this.originalImg.width;
+        const tempCanvas = this._getTempCanvas1(this.originalImg.height, this.originalImg.width);
         const tempCtx = tempCanvas.getContext('2d');
         tempCtx.translate(tempCanvas.width / 2, tempCanvas.height / 2);
         tempCtx.rotate(90 * Math.PI / 180);
@@ -100,11 +110,9 @@ export class PhotoEditor {
         rotatedImg.onload = () => {
             this.loadImage(rotatedImg);
         };
-        rotatedImg.src = tempCanvas.toDataURL('image/jpeg');
-
-        // VRAM Serbest Bırakma
-        tempCanvas.width = 0;
-        tempCanvas.height = 0;
+        
+        // Rotasyon sırasında da tam kalite koruması
+        rotatedImg.src = tempCanvas.toDataURL('image/jpeg', 1.0);
     }
 
     applyChromaticAberration(intensity) {
@@ -115,9 +123,7 @@ export class PhotoEditor {
         const shift = (intensity / 100) * (w * 0.012);
         const scale = 1 + (shift / w) * 2;
 
-        const redCanvas = document.createElement('canvas');
-        redCanvas.width = w;
-        redCanvas.height = h;
+        const redCanvas = this._getTempCanvas1(w, h);
         const rCtx = redCanvas.getContext('2d');
         
         rCtx.save();
@@ -130,9 +136,7 @@ export class PhotoEditor {
         rCtx.fillStyle = '#ff0000';
         rCtx.fillRect(0, 0, w, h);
 
-        const cyanCanvas = document.createElement('canvas');
-        cyanCanvas.width = w;
-        cyanCanvas.height = h;
+        const cyanCanvas = this._getTempCanvas2(w, h);
         const cCtx = cyanCanvas.getContext('2d');
         
         cCtx.save();
@@ -151,28 +155,20 @@ export class PhotoEditor {
         this.ctx.globalCompositeOperation = 'screen';
         this.ctx.drawImage(cyanCanvas, 0, 0);
         this.ctx.restore();
-
-        // VRAM Temizliği
-        redCanvas.width = 0; redCanvas.height = 0;
-        cyanCanvas.width = 0; cyanCanvas.height = 0;
     }
 
     applyHalation() {
         const w = this.canvas.width;
         const h = this.canvas.height;
 
-        const hlCanvas = document.createElement('canvas');
-        hlCanvas.width = w;
-        hlCanvas.height = h;
+        const hlCanvas = this._getTempCanvas1(w, h);
         const hlCtx = hlCanvas.getContext('2d');
         hlCtx.drawImage(this.canvas, 0, 0);
         hlCtx.globalCompositeOperation = 'difference';
         hlCtx.filter = 'brightness(0.25) contrast(2.5) grayscale(100%)';
         hlCtx.drawImage(this.canvas, 0, 0);
 
-        const glowCanvas = document.createElement('canvas');
-        glowCanvas.width = w;
-        glowCanvas.height = h;
+        const glowCanvas = this._getTempCanvas2(w, h);
         const gCtx = glowCanvas.getContext('2d');
         
         const blurSize = Math.max(8, Math.round(w * 0.015)); 
@@ -187,10 +183,6 @@ export class PhotoEditor {
         this.ctx.globalAlpha = 0.40;
         this.ctx.drawImage(glowCanvas, 0, 0);
         this.ctx.restore();
-
-        // VRAM Temizliği
-        hlCanvas.width = 0; hlCanvas.height = 0;
-        glowCanvas.width = 0; glowCanvas.height = 0;
     }
 
     applySwirlyBokeh(intensity) {
@@ -202,11 +194,8 @@ export class PhotoEditor {
         const cy = h / 2;
         const maxRadius = Math.min(w, h) * 0.35; 
 
-        const swirlCanvas = document.createElement('canvas');
-        swirlCanvas.width = w;
-        swirlCanvas.height = h;
+        const swirlCanvas = this._getTempCanvas1(w, h);
         const sCtx = swirlCanvas.getContext('2d');
-
         sCtx.drawImage(this.canvas, 0, 0);
 
         const steps = w > 2000 ? 2 : 4; 
@@ -223,35 +212,23 @@ export class PhotoEditor {
         }
         sCtx.globalAlpha = 1.0;
 
-        const maskCanvas = document.createElement('canvas');
-        maskCanvas.width = w;
-        maskCanvas.height = h;
+        const maskCanvas = this._getTempCanvas2(w, h);
         const mCtx = maskCanvas.getContext('2d');
-
         const grad = mCtx.createRadialGradient(cx, cy, maxRadius * 0.4, cx, cy, maxRadius * 1.3);
         grad.addColorStop(0, 'rgba(0,0,0,0)'); 
         grad.addColorStop(1, 'rgba(0,0,0,1)'); 
-
         mCtx.fillStyle = grad;
         mCtx.fillRect(0, 0, w, h);
 
-        const blendCanvas = document.createElement('canvas');
-        blendCanvas.width = w;
-        blendCanvas.height = h;
-        const bCtx = blendCanvas.getContext('2d');
-        
-        bCtx.drawImage(swirlCanvas, 0, 0);
-        bCtx.globalCompositeOperation = 'destination-in';
-        bCtx.drawImage(maskCanvas, 0, 0);
+        sCtx.save();
+        sCtx.globalCompositeOperation = 'destination-in';
+        sCtx.drawImage(maskCanvas, 0, 0);
+        sCtx.restore();
 
         this.ctx.save();
-        this.ctx.drawImage(blendCanvas, 0, 0);
+        this.ctx.globalCompositeOperation = 'source-over';
+        this.ctx.drawImage(swirlCanvas, 0, 0);
         this.ctx.restore();
-
-        // VRAM Temizliği
-        swirlCanvas.width = 0; swirlCanvas.height = 0;
-        maskCanvas.width = 0; maskCanvas.height = 0;
-        blendCanvas.width = 0; blendCanvas.height = 0;
     }
 
     render() {
