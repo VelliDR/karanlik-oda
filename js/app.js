@@ -52,15 +52,11 @@ function initApp() {
     });
 }
 
-// ---------------------------------------------------------------------
-// KORUMALI FORMAT GEÇİŞ MATRİSİ (Çevrimdışı HEIC & PNG Yaması)
-// ---------------------------------------------------------------------
-
 async function loadHeicScript() {
     if (window.heic2any) return; 
     return new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = "./js/heic2any.min.js"; // Yerel dizindeki cached dosya
+        script.src = "./js/heic2any.min.js"; 
         script.onload = resolve;
         script.onerror = () => reject(new Error("Çevrimdışı HEIF çözücü yüklenemedi."));
         document.head.appendChild(script);
@@ -73,15 +69,13 @@ function flattenTransparentImage(img) {
     tempCanvas.height = img.height;
     const tempCtx = tempCanvas.getContext('2d');
     
-    // Şeffaf alanları düz beyaza boyayarak JPEG patlamasını engelle
     tempCtx.fillStyle = '#FFFFFF';
     tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
     tempCtx.drawImage(img, 0, 0);
     
     const flattenedImg = new Image();
-    flattenedImg.src = tempCanvas.toDataURL('image/jpeg', 0.95);
+    flattenedImg.src = tempCanvas.toDataURL('image/jpeg', 1.0);
 
-    // Bellek Sızıntısı Koruması: Geçici tuval boyutunu sıfırlayıp VRAM'i boşalt
     tempCanvas.width = 0;
     tempCanvas.height = 0;
 
@@ -106,7 +100,7 @@ async function handleFileLoad(e) {
             const convertedBlob = await heic2any({
                 blob: file,
                 toType: "image/jpeg",
-                quality: 0.90
+                quality: 1.0
             });
             file = Array.isArray(convertedBlob) ? convertedBlob[0] : convertedBlob;
         } catch (error) {
@@ -127,7 +121,6 @@ async function handleFileLoad(e) {
         img.onload = () => {
             placeholder.classList.add('hidden');
             
-            // Eğer dosya transparan PNG ise kapıda banyo et
             if (fileType === 'image/png' || fileName.endsWith('.png')) {
                 img = flattenTransparentImage(img);
                 img.onload = () => {
@@ -149,8 +142,6 @@ function enableSaveUI() {
     btnSave.className = "w-full bg-emerald-900 border border-emerald-800 text-emerald-400 py-3 rounded-xl text-xs font-bold tracking-wider transition-colors cursor-pointer";
 }
 
-// ---------------------------------------------------------------------
-
 function handleReset() {
     editor.resetSettings();
     
@@ -168,13 +159,27 @@ function handleReset() {
 function handleSave() {
     if (!editor.originalImg) return;
 
-    btnSave.innerText = "💾 İŞLENİYOR (16MP+)...";
+    btnSave.innerText = "💾 İŞLENİYOR...";
     btnSave.disabled = true;
 
     setTimeout(() => {
+        const MAX_DIM = 4000; 
+        let w = editor.originalImg.width;
+        let h = editor.originalImg.height;
+
+        if (w > MAX_DIM || h > MAX_DIM) {
+            if (w > h) {
+                h = Math.round((h * MAX_DIM) / w);
+                w = MAX_DIM;
+            } else {
+                w = Math.round((w * MAX_DIM) / h);
+                h = MAX_DIM;
+            }
+        }
+
         const exportCanvas = document.createElement('canvas');
-        exportCanvas.width = editor.originalImg.width;
-        exportCanvas.height = editor.originalImg.height;
+        exportCanvas.width = w;
+        exportCanvas.height = h;
 
         const currentCanvas = editor.canvas;
         const currentCtx = editor.ctx;
@@ -197,7 +202,6 @@ function handleSave() {
 
             URL.revokeObjectURL(url);
 
-            // VRAM Temizliği: Yüksek çözünürlüklü tuvali imha et
             exportCanvas.width = 0;
             exportCanvas.height = 0;
 
@@ -207,9 +211,11 @@ function handleSave() {
             editor.initNoisePattern();
             editor.render();
 
-            btnSave.innerText = "💾 FULL-RES GÖRSELİ KAYDET (16MP+)";
+            btnSave.innerText = "💾 GÖRSELİ KAYDET";
             btnSave.disabled = false;
-        }, 'image/jpeg', 0.95);
+            
+        
+        }, 'image/jpeg', 0.97);
 
     }, 50);
 }
