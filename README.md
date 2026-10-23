@@ -1,47 +1,73 @@
-🧪 Foton: Karanlık Oda
+# 🧪 Foton: Karanlık Oda (v3.0 - TypeScript & Vite)
 
-Abonelik ücretlerinden, hantal arayüzlerden ve fotoğrafları uzak sunuculara yükleme zorunluluğundan sıkılanlar için geliştirilmiş, %100 çevrimdışı (offline-first) çalışan tarayıcı tabanlı bir banyo istasyonu.
+Abonelik ücretlerinden, hantal arayüzlerden ve fotoğrafları uzak sunuculara yükleme zorunluluğundan sıkılanlar için geliştirilmiş, **%100 çevrimdışı (offline-first)** çalışan, tarayıcı tabanlı bir analog banyo istasyonu ve optik simülatörü.
 
-Fotoğraflarınız cihazınızdan çıkmaz, analiz edilmez veya bir buluta yüklenmez. Tüm işleme mantığı tamamen tarayıcınızın içinde, cihazınızın kendi donanım gücüyle (GPU/RAM) çalışır.
-🌀 Neden Karanlık Oda?
+Fotoğraflarınız cihazınızdan asla çıkmaz, analiz edilmez veya bir buluta yüklenmez. Tüm işleme mantığı tamamen tarayıcınızın içinde, **TypeScript, Vite, HTML5 Canvas ve Web Worker/PWA** gücüyle yerel olarak çalışır.
 
-Modern dijital kameralar jilet gibi keskin, kusursuz ama bir o kadar da ruhsuz fotoğraflar üretiyor. Karanlık Oda, optik fiziğin ve kimyanın o "kusurlu ama sıcak" estetiğini (Wabi-Sabi) dijital görsellere geri kazandırmayı amaçlar.
-Karakteristik Özellikler
+---
 
-    Helios Swirl (Dönen Bokeh): Efsanevi Rus merceği Helios 44M-4'ün kenar bölgelerindeki mekanik vinyet ve astigmatizm hatasını (dairesel bükülme) matematiksel olarak simüle eder.
+## 🌀 Neden Karanlık Oda?
 
-    CineStill 800T Halation (Kırmızı Parlama): Sinema filmlerinin arkasındaki ışık emici katmanın (rem-jet) temizlenmesiyle oluşan o ikonik kimyasal reaksiyonu taklit eder. Parlak ışıkları izole eder, CineStill kırmızısına boyar ve yumuşatarak görselin üzerine mühürler.
+Modern dijital kameralar jilet gibi keskin, kusursuz ama bir o kadar da ruhsuz fotoğraflar üretiyor. Karanlık Oda, optik fiziğin ve kimyanın o "kusurlu ama sıcak" estetiğini (**Wabi-Sabi**) dijital görsellere geri kazandırmayı amaçlar.
 
-    Chromatic Aberration (Renk Sapması): Eski manuel lenslerin odak kaçırma hatasını, kırmızı ve cyan kanallarını milimetrik olarak GPU üzerinde kaydırıp ölçeklendirerek canlandırır.
+### 🔬 Karakteristik Özellikler
 
-    Leica Nordic Cool: Gölgeleri dondurucu bir İskandinav lacivertine bükerken, cilt tonlarını bozmadan sıcak tutan özel bir split-toning reçetesi.
+* **🌀 Helios Swirl (Dönen Bokeh):** Efsanevi Rus merceği Helios 44M-4'ün kenar bölgelerindeki mekanik vinyet ve astigmatizm hatasını (dairesel bükülme) matematiksel olarak simüle eder.
+* **🎬 CineStill 800T Halation (Kırmızı Parlama):** Sinema filmlerinin arkasındaki ışık emici katmanın (rem-jet) temizlenmesiyle oluşan o ikonik kimyasal reaksiyonu taklit eder. Parlak ışıkları izole eder, CineStill kırmızısına boyar ve yumuşatarak görselin üzerine mühürler.
+* **⚡ Chromatic Aberration (Renk Sapması):** Eski manuel lenslerin odak kaçırma hatasını, kırmızı ve cyan kanallarını milimetrik olarak GPU üzerinde kaydırıp ölçeklendirerek canlandırır.
+* **🌾 Leica Nordic Cool:** Gölgeleri dondurucu bir İskandinav lacivertine bükerken, cilt tonlarını bozmadan sıcak tutan özel bir split-toning reçetesi.
+* **👁️ Anlık Karşılaştır (Before / After):** Ekrana veya butona basılı tutarak (veya klavyede Boşluk tuşuna basarak) yapılan düzenlemeleri orijinal ham fotoğrafla anında kıyaslama imkanı.
+* **↩️ Geri Al / İleri Al (Undo / Redo):** Yapılan her ayar ve reçete seçimi için tam geçmiş adımları (`Ctrl+Z`, `Ctrl+Y`).
+* **🔄 Kayıpsız Döndürme (Lossless Rotation):** Görseli JPEG sıkıştırmasına sokmadan, doğrudan tuval koordinat matrisiyle kayıpsız 90° döndürme.
+* **🍏 Çevrimdışı Apple HEIC / HEIF Desteği:** iPhone ve güncel mobil cihazların fotoğraflarını cihaz içinde otomatik olarak JPEG standardına dönüştürür.
+* **🛡️ Sıfır Bellek Kopyası (Zero-Copy):** `readAsDataURL` yerine `URL.createObjectURL` ve `createImageBitmap` kullanılarak 16MP+ görsellerde tarayıcının çökmesi engellenir.
 
-    Çevrimdışı HEIF / HEIC Desteği (Yeni!): iPhone ve güncel Android cihazların yüksek verimli sıkıştırma formatlarını, internet bağlantınız olmasa bile cihaz içinde otomatik olarak JPEG standardına dönüştürür.
+---
 
-    PNG Şeffaflık Koruması: Transparan görsellerin JPEG formatına dönüştürülürken arkasında oluşan o çirkin siyah lekeleri otomatik olarak beyaz zeminle yamalar.
+## 🛠️ Teknoloji Yığını (v3.0 Mimarisi)
 
-⚡ Hafiflik ve VRAM Optimizasyonu
+* **Build Tool:** [Vite 6+](https://vitejs.dev/) — Anında HMR, yüksek hızlı modül paketleme
+* **Dil:** [TypeScript (Strict Mode)](https://www.typescriptlang.org/) — Güçlü tip güvenliği ve sıfır çalışma zamanı hatası
+* **Stil:** [Tailwind CSS v4](https://tailwindcss.com/) — Sıfır çalışma zamanı CDN gecikmesi, derlenmiş yerel CSS
+* **PWA:** [vite-plugin-pwa (Workbox)](https://vite-pwa-org.netlify.app/) — Tam çevrimdışı önbellekleme ve uygulama kurulumu
+* **Optik Motoru:** Özel HTML5 2D Canvas & Matrix Compositing Pipeline
 
-Uygulama, mobil tarayıcıların acımasız bellek sınırlarına göre optimize edilmiştir:
+---
 
-    Çift Kanallı Akış: 16MP+ görselleri düzenlerken cihazınız kasmaz. Düzenlemeyi hızlıca 1000px sınırındaki akıcı bir önizleme üzerinde yaparsınız; kaydet butonuna bastığınızda işlemler orijinal çözünürlüğe tek seferde uygulanır.
+## 💻 Geliştirme ve Kurulum
 
-    VRAM Kalkanı: İşlemler sırasında arka planda oluşturulan tüm geçici tuval (canvas) elementleri, işi bittiği an bellek genişlikleri sıfırlanarak imha edilir. Bu sayede tarayıcı sekmesinin çökmesi engellenir.
+### Gereksinimler
+* Node.js 18+ (Node 20+ önerilir)
+* npm veya pnpm
 
-    Lazy Loading: HEIC dönüştürücü kütüphanesi sadece siz bir HEIC fotoğraf yüklediğinizde diskten (Service Worker) okunarak belleğe alınır; uygulamanın ilk açılış hızını asla etkilemez.
+### Projeyi Başlatma
 
-📱 Kurulum (PWA)
+```bash
+# Bağımlılıkları yükleyin
+npm install
 
-Karanlık Oda, tamamen çevrimdışı çalışabilen bir Progressive Web App (PWA) uygulamasıdır. Dağ başında, uçakta veya şebekenin çekmediği herhangi bir yerde kullanabilirsiniz.
+# Geliştirme sunucusunu başlatın
+npm run dev
 
-    Uygulamayı mobil tarayıcınızda (Chrome veya Safari) açın.
+# Üretim (Production) derlemesi alın
+npm run build
 
-    Tarayıcı menüsünden "Ana Ekrana Ekle" veya "Uygulamayı Yükle" seçeneğine dokunun.
+# Üretim çıktısını yerel olarak önizleyin
+npm run preview
+```
 
-    Uygulama, telefonunuzun menüsüne bağımsız bir uygulama olarak eklenecektir.
+---
 
-🛠️ Geliştirici Notu
+## 📱 Kurulum (PWA)
 
-Bu proje, ticari kaygılardan uzak, sadece analog camların kusurlarını ve o eski kimyasal banyo sürecini dijital dünyada yaşatmak isteyen bir fotoğraf severin kişisel denemesidir.
+Karanlık Oda, tamamen çevrimdışı çalışabilen modern bir Progressive Web App (PWA) uygulamasıdır:
 
-Katkıda bulunmak, yeni reçeteler eklemek veya optik formülleri geliştirmek isterseniz PR göndermekten çekinmeyin.
+1. Uygulamayı mobil veya masaüstü tarayıcınızda açın.
+2. Sağ üstte beliren **"Yükle"** butonuna dokunun (veya tarayıcı menüsünden "Ana Ekrana Ekle"yi seçin).
+3. İnternet bağlantınız olmasa bile cihazınızda yerel bir uygulama gibi bağımsız pencerede kullanın.
+
+---
+
+## 📄 Lisans
+
+Bu proje [MIT Lisansı](LICENSE) ile korunmaktadır.
