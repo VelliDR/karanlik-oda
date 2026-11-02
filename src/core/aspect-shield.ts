@@ -112,7 +112,7 @@ export function generateSkinProtectionMask(
   height: number,
   intensity: number
 ): AnyCanvas | null {
-  if (intensity <= 0) return null;
+  if (intensity <= 0 || width <= 0 || height <= 0) return null;
 
   // 1. En-boy oranını bozmadan 512px AI kutusuna al
   const { canvas: lbCanvas, ctx: lbCtx, roi } = createLetterboxCanvas(
@@ -247,8 +247,15 @@ export function projectDepthMapFromRaw(
 
   for (let i = 0; i < rawDepth.length; i++) {
     const val = rawDepth[i];
-    if (val < min) min = val;
-    if (val > max) max = val;
+    if (Number.isFinite(val)) {
+      if (val < min) min = val;
+      if (val > max) max = val;
+    }
+  }
+
+  if (!Number.isFinite(min) || !Number.isFinite(max) || min === max) {
+    min = 0;
+    max = 1;
   }
 
   const range = max - min || 1;
@@ -260,8 +267,9 @@ export function projectDepthMapFromRaw(
   const data = imgData.data;
 
   for (let i = 0; i < rawDepth.length; i++) {
-    // Depth Anything: yüksek değerler kameraya daha yakın (ön plan)
-    const norm = (rawDepth[i] - min) / range;
+    const val = rawDepth[i];
+    const finiteVal = Number.isFinite(val) ? val : min;
+    const norm = Math.max(0, Math.min(1.0, (finiteVal - min) / range));
     const byteVal = Math.round(norm * 255);
     const idx = i * 4;
     data[idx] = byteVal;
@@ -273,7 +281,9 @@ export function projectDepthMapFromRaw(
   ctx.putImageData(imgData, 0, 0);
 
   // Kalkan üzerinden unpad ve projeksiyon
-  const projected = unpadAndProjectMask(depthBoxCanvas, roi, targetWidth, targetHeight);
+  const safeTargetW = Math.max(1, targetWidth);
+  const safeTargetH = Math.max(1, targetHeight);
+  const projected = unpadAndProjectMask(depthBoxCanvas, roi, safeTargetW, safeTargetH);
   depthBoxCanvas.width = 0;
   depthBoxCanvas.height = 0;
 

@@ -48,11 +48,7 @@ export function extractPhotoFeatures(
     throw new Error('Görsel analiz tuvali oluşturulamadı.');
   }
 
-  ctx.drawImage(sourceCanvas as CanvasImageSource, 0, 0, sampleSize, sampleSize);
-  const imgData = ctx.getImageData(0, 0, sampleSize, sampleSize);
-  const data = imgData.data;
   const numPixels = sampleSize * sampleSize;
-
   let sumL = 0;
   let sumL2 = 0;
   let shadowCount = 0;
@@ -65,54 +61,62 @@ export function extractPhotoFeatures(
   let sumB = 0;
   let sumSat = 0;
 
-  for (let i = 0; i < data.length; i += 4) {
-    const r = data[i];
-    const g = data[i + 1];
-    const b = data[i + 2];
+  try {
+    ctx.drawImage(sourceCanvas as CanvasImageSource, 0, 0, sampleSize, sampleSize);
+    const imgData = ctx.getImageData(0, 0, sampleSize, sampleSize);
+    const data = imgData.data;
 
-    sumR += r;
-    sumG += g;
-    sumB += b;
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
 
-    // Photometric Luminance (Rec. 709)
-    const l = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-    sumL += l;
-    sumL2 += l * l;
+      sumR += r;
+      sumG += g;
+      sumB += b;
 
-    if (l < 0.20) shadowCount++;
-    else if (l > 0.85) {
-      highlightCount++;
-      if (l > 0.94) specularCount++;
-    } else {
-      midtoneCount++;
+      // Photometric Luminance (Rec. 709)
+      const l = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      sumL += l;
+      sumL2 += l * l;
+
+      if (l < 0.20) shadowCount++;
+      else if (l > 0.85) {
+        highlightCount++;
+        if (l > 0.94) specularCount++;
+      } else {
+        midtoneCount++;
+      }
+
+      // Renk Doygunluğu (HSV S)
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const delta = max - min;
+      const sat = max > 0 ? delta / max : 0;
+      sumSat += sat;
+
+      // YCbCr İnsan Ten Kromotogramı
+      const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+      const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+
+      if (
+        cr >= 133 &&
+        cr <= 175 &&
+        cb >= 77 &&
+        cb <= 130 &&
+        r > g &&
+        g > b &&
+        r - g >= 10
+      ) {
+        skinCount++;
+      }
     }
-
-    // Renk Doygunluğu (HSV S)
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const delta = max - min;
-    const sat = max > 0 ? delta / max : 0;
-    sumSat += sat;
-
-    // YCbCr İnsan Ten Kromotogramı
-    const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
-    const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
-
-    if (
-      cr >= 133 &&
-      cr <= 175 &&
-      cb >= 77 &&
-      cb <= 130 &&
-      r > g &&
-      g > b &&
-      r - g >= 10
-    ) {
-      skinCount++;
-    }
+  } catch (err) {
+    console.warn('Görsel piksel analizi hatası, varsayılan değerlere geçiliyor:', err);
+  } finally {
+    sampleCanvas.width = 0;
+    sampleCanvas.height = 0;
   }
-
-  sampleCanvas.width = 0;
-  sampleCanvas.height = 0;
 
   const meanL = sumL / numPixels;
   const variance = Math.max(0, sumL2 / numPixels - meanL * meanL);

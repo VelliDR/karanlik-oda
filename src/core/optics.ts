@@ -77,8 +77,13 @@ export function generateDepthOfFieldMask(
   focalDepth: number = 0.5,
   aperture: number = 50
 ): AnyCanvas {
-  const procW = Math.min(width, 1024);
-  const procH = Math.min(height, Math.round((procW * height) / width));
+  const safeW = Math.max(1, Math.floor(width));
+  const safeH = Math.max(1, Math.floor(height));
+  const safeFocalDepth = Math.max(0, Math.min(1.0, Number.isFinite(focalDepth) ? focalDepth : 0.5));
+  const safeAperture = Math.max(0, Math.min(100, Number.isFinite(aperture) ? aperture : 50));
+
+  const procW = Math.min(safeW, 1024);
+  const procH = Math.max(1, Math.min(safeH, Math.round((procW * safeH) / safeW)));
 
   const sampleCanvas = createCompatibleCanvas(procW, procH);
   const sCtx = sampleCanvas.getContext('2d') as AnyRenderingContext2D | null;
@@ -90,13 +95,13 @@ export function generateDepthOfFieldMask(
 
   // Diyafram toleransı: aperture 100 (f/1.4 sığ DoF) -> tolerans 0.04
   // aperture 0 (f/16 geniş DoF) -> tolerans 0.35
-  const apertureFactor = aperture / 100;
+  const apertureFactor = safeAperture / 100;
   const threshold = 0.35 - apertureFactor * 0.31;
   const falloff = 0.16;
 
   for (let i = 0; i < data.length; i += 4) {
     const z = data[i] / 255;
-    const dist = Math.abs(z - focalDepth);
+    const dist = Math.abs(z - safeFocalDepth);
 
     if (dist <= threshold) {
       data[i + 3] = 0;
@@ -111,13 +116,13 @@ export function generateDepthOfFieldMask(
 
   sCtx.putImageData(imgData, 0, 0);
 
-  const outCanvas = createCompatibleCanvas(width, height);
+  const outCanvas = createCompatibleCanvas(safeW, safeH);
   const oCtx = outCanvas.getContext('2d') as AnyRenderingContext2D | null;
   if (!oCtx) return sampleCanvas;
 
   oCtx.imageSmoothingEnabled = true;
   oCtx.imageSmoothingQuality = 'high';
-  oCtx.drawImage(sampleCanvas as CanvasImageSource, 0, 0, width, height);
+  oCtx.drawImage(sampleCanvas as CanvasImageSource, 0, 0, safeW, safeH);
 
   sampleCanvas.width = 0;
   sampleCanvas.height = 0;

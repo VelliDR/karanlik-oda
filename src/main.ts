@@ -461,6 +461,7 @@ checkAiDepth.addEventListener('change', async () => {
 
   const enabled = checkAiDepth.checked;
   if (enabled) {
+    checkAiDepth.disabled = true;
     depthProgressContainer.classList.remove('hidden');
     depthStatusBadge.innerText = 'YÜKLENİYOR';
     depthStatusBadge.className =
@@ -485,6 +486,8 @@ checkAiDepth.addEventListener('change', async () => {
         'text-[8px] font-mono px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30';
       const msg = err instanceof Error ? err.message : String(err);
       showToast(`Derinlik motoru başlatılamadı: ${msg}`, 'error', 4500);
+    } finally {
+      checkAiDepth.disabled = false;
     }
   } else {
     editor.setAiDepthEnabled(false);
@@ -556,22 +559,33 @@ btnSmartRecipeAnalyze.addEventListener('click', () => {
     return;
   }
 
-  showToast('🔍 Sahne analizi yapılıyor...', 'info', 1000);
-  const suggestion = editor.getSmartRecipeSuggestion();
-  if (!suggestion) {
-    showToast('Sahne analiz edilemedi.', 'error', 3000);
-    return;
+  btnSmartRecipeAnalyze.disabled = true;
+  const originalHtml = btnSmartRecipeAnalyze.innerHTML;
+  btnSmartRecipeAnalyze.innerHTML = `<span>⏳</span> Analiz Ediliyor...`;
+
+  try {
+    const suggestion = editor.getSmartRecipeSuggestion();
+    if (!suggestion) {
+      showToast('Sahne analiz edilemedi.', 'error', 3000);
+      return;
+    }
+
+    currentSmartSuggestion = suggestion;
+    recipeSceneBadge.innerText = `${suggestion.badge} • ${suggestion.sceneTitle}`;
+    recipeConfidenceBadge.innerText = `%${suggestion.confidencePercent} Eşleşme`;
+    recipeTempText.innerText = suggestion.colorTempName;
+    recipeLightText.innerText = suggestion.lightingCondition;
+    recipeExplanationText.innerText = suggestion.explanation;
+
+    smartRecipeResult.classList.remove('hidden');
+    showToast(`✨ Sahne tespit edildi: ${suggestion.sceneTitle}`, 'info', 2500);
+  } catch (err) {
+    console.error(err);
+    showToast('Sahne analizi sırasında beklenmeyen hata oluştu.', 'error');
+  } finally {
+    btnSmartRecipeAnalyze.disabled = false;
+    btnSmartRecipeAnalyze.innerHTML = originalHtml;
   }
-
-  currentSmartSuggestion = suggestion;
-  recipeSceneBadge.innerText = `${suggestion.badge} • ${suggestion.sceneTitle}`;
-  recipeConfidenceBadge.innerText = `%${suggestion.confidencePercent} Eşleşme`;
-  recipeTempText.innerText = suggestion.colorTempName;
-  recipeLightText.innerText = suggestion.lightingCondition;
-  recipeExplanationText.innerText = suggestion.explanation;
-
-  smartRecipeResult.classList.remove('hidden');
-  showToast(`✨ Sahne tespit edildi: ${suggestion.sceneTitle}`, 'info', 2500);
 });
 
 btnSmartRecipeApply.addEventListener('click', () => {

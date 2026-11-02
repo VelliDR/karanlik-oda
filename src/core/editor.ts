@@ -112,6 +112,7 @@ export class PhotoEditor {
   private depthRaw: Float32Array | null = null;
   private depthRoi: AspectROI | null = null;
   private depthCanvas: AnyCanvas | null = null;
+  private currentDepthJobId = 0;
   public isDepthAnalyzing = false;
   public depthStatusMessage = '';
   public depthProgress = 0;
@@ -286,6 +287,7 @@ export class PhotoEditor {
     if (!this.previewImg && !this.originalImg) return;
     if (this.isDepthAnalyzing) return;
 
+    const jobId = ++this.currentDepthJobId;
     this.isDepthAnalyzing = true;
     this.depthProgress = 0;
     this.depthStatusMessage = 'AI tensörü hazırlanıyor...';
@@ -328,7 +330,26 @@ export class PhotoEditor {
 
       const worker = this.depthWorker;
 
+      const cleanupListeners = () => {
+        worker.removeEventListener('message', handleMessage);
+        worker.removeEventListener('error', handleError);
+      };
+
+      const handleError = (errEvent: ErrorEvent) => {
+        cleanupListeners();
+        if (this.currentDepthJobId !== jobId) return;
+        this.isDepthAnalyzing = false;
+        this.depthStatusMessage = errEvent.message || 'Worker hatası oluştu.';
+        if (onProgress) onProgress(0, this.depthStatusMessage);
+        reject(new Error(this.depthStatusMessage));
+      };
+
       const handleMessage = (e: MessageEvent) => {
+        if (this.currentDepthJobId !== jobId) {
+          cleanupListeners();
+          return;
+        }
+
         const data = e.data || {};
         if (data.type === 'download-progress') {
           this.depthProgress = data.percent;
@@ -338,7 +359,7 @@ export class PhotoEditor {
           this.depthStatusMessage = data.message;
           if (onProgress) onProgress(this.depthProgress, data.message);
         } else if (data.type === 'success') {
-          worker.removeEventListener('message', handleMessage);
+          cleanupListeners();
           this.depthRaw = data.rawDepth;
           this.depthRoi = roi;
           this.depthCanvas = projectDepthMapFromRaw(this.depthRaw!, roi, w, h, 518);
@@ -349,7 +370,7 @@ export class PhotoEditor {
           this.render();
           resolve();
         } else if (data.type === 'error') {
-          worker.removeEventListener('message', handleMessage);
+          cleanupListeners();
           this.isDepthAnalyzing = false;
           this.depthStatusMessage = data.message;
           if (onProgress) onProgress(0, data.message);
@@ -358,6 +379,7 @@ export class PhotoEditor {
       };
 
       worker.addEventListener('message', handleMessage);
+      worker.addEventListener('error', handleError);
       worker.postMessage({ type: 'run', floatArray }, [floatArray.buffer]);
     });
   }
@@ -371,15 +393,19 @@ export class PhotoEditor {
     const h = this.depthCanvas.height;
     if (w <= 0 || h <= 0) return 0.5;
 
-    const x = Math.min(w - 1, Math.max(0, Math.floor(normalizedX * w)));
-    const y = Math.min(h - 1, Math.max(0, Math.floor(normalizedY * h)));
+    const clampedNormX = Math.max(0, Math.min(1.0, normalizedX));
+    const clampedNormY = Math.max(0, Math.min(1.0, normalizedY));
+
+    const x = Math.min(w - 1, Math.max(0, Math.floor(clampedNormX * w)));
+    const y = Math.min(h - 1, Math.max(0, Math.floor(clampedNormY * h)));
 
     const ctx = this.depthCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
     if (!ctx) return 0.5;
 
     try {
       const pixel = ctx.getImageData(x, y, 1, 1).data;
-      return pixel[0] / 255;
+      const sampled = pixel[0] / 255;
+      return Number.isFinite(sampled) ? Math.max(0, Math.min(1.0, sampled)) : 0.5;
     } catch {
       return 0.5;
     }
@@ -390,7 +416,20 @@ export class PhotoEditor {
     onProgress?: (progress: number, message: string) => void
   ): Promise<void> {
     this.settings.aiDepthEnabled = enabled;
-    if (enabled && !this.depthCanvas && (this.previewImg || this.originalImg)) {
+    if (!enabled) {
+      if (this.isDepthAnalyzing) {
+        this.currentDepthJobId++;
+        this.isDepthAnalyzing = false;
+        if (this.depthWorker) {
+          this.depthWorker.terminate();
+          this.depthWorker = null;
+        }
+      }
+      this.render();
+      return;
+    }
+
+    if (!this.depthCanvas && (this.previewImg || this.originalImg)) {
       await this.analyzeDepth(onProgress);
     } else {
       this.render();
@@ -858,12 +897,18 @@ export class PhotoEditor {
   }
 
   private cleanupDepth(): void {
+    this.currentDepthJobId++;
+    this.isDepthAnalyzing = false;
     this.depthRaw = null;
     this.depthRoi = null;
     if (this.depthCanvas) {
       this.depthCanvas.width = 0;
       this.depthCanvas.height = 0;
       this.depthCanvas = null;
+    }
+    if (this.depthWorker) {
+      this.depthWorker.terminate();
+      this.depthWorker = null;
     }
   }
 
