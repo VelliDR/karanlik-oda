@@ -186,3 +186,97 @@ export function generateSkinProtectionMask(
 
   return finalMask;
 }
+
+/**
+ * Depth Anything V2 için giriş tensörünü (1x3x518x518, NCHW, ImageNet normalizasyonu) hazırlar.
+ * En-boy oranını bozmadan 518px letterbox içine çeker.
+ */
+export function prepareDepthInputTensor(
+  sourceCanvas: AnyCanvas,
+  width: number,
+  height: number,
+  boxSize: number = 518
+): { floatArray: Float32Array; roi: AspectROI } {
+  const { canvas: lbCanvas, ctx: lbCtx, roi } = createLetterboxCanvas(
+    sourceCanvas as CanvasImageSource,
+    width,
+    height,
+    boxSize
+  );
+
+  const imgData = lbCtx.getImageData(0, 0, boxSize, boxSize);
+  const data = imgData.data;
+  const planeSize = boxSize * boxSize;
+  const floatArray = new Float32Array(1 * 3 * planeSize);
+
+  // ImageNet standart normalizasyonu (DPTImageProcessor)
+  const meanR = 0.485, meanG = 0.456, meanB = 0.406;
+  const stdR = 0.229, stdG = 0.224, stdB = 0.225;
+
+  for (let i = 0; i < planeSize; i++) {
+    const idx = i * 4;
+    const r = data[idx] / 255;
+    const g = data[idx + 1] / 255;
+    const b = data[idx + 2] / 255;
+
+    floatArray[i] = (r - meanR) / stdR;                       // Kanal 0 (Kırmızı)
+    floatArray[planeSize + i] = (g - meanG) / stdG;            // Kanal 1 (Yeşil)
+    floatArray[2 * planeSize + i] = (b - meanB) / stdB;        // Kanal 2 (Mavi)
+  }
+
+  // VRAM temizliği
+  lbCanvas.width = 0;
+  lbCanvas.height = 0;
+
+  return { floatArray, roi };
+}
+
+/**
+ * Modelden çıkan 518x518 ham Float32 derinlik matrisini min-max normalize eder,
+ * letterbox dolgularını atar ve hedef tuval boyutuna 1:1 piksel hassasiyetiyle projekte eder.
+ */
+export function projectDepthMapFromRaw(
+  rawDepth: Float32Array,
+  roi: AspectROI,
+  targetWidth: number,
+  targetHeight: number,
+  boxSize: number = 518
+): AnyCanvas {
+  let min = Infinity;
+  let max = -Infinity;
+
+  for (let i = 0; i < rawDepth.length; i++) {
+    const val = rawDepth[i];
+    if (val < min) min = val;
+    if (val > max) max = val;
+  }
+
+  const range = max - min || 1;
+  const depthBoxCanvas = createCompatibleCanvas(boxSize, boxSize);
+  const ctx = depthBoxCanvas.getContext('2d') as AnyRenderingContext2D | null;
+  if (!ctx) return depthBoxCanvas;
+
+  const imgData = ctx.createImageData(boxSize, boxSize);
+  const data = imgData.data;
+
+  for (let i = 0; i < rawDepth.length; i++) {
+    // Depth Anything: yüksek değerler kameraya daha yakın (ön plan)
+    const norm = (rawDepth[i] - min) / range;
+    const byteVal = Math.round(norm * 255);
+    const idx = i * 4;
+    data[idx] = byteVal;
+    data[idx + 1] = byteVal;
+    data[idx + 2] = byteVal;
+    data[idx + 3] = 255;
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+
+  // Kalkan üzerinden unpad ve projeksiyon
+  const projected = unpadAndProjectMask(depthBoxCanvas, roi, targetWidth, targetHeight);
+  depthBoxCanvas.width = 0;
+  depthBoxCanvas.height = 0;
+
+  return projected;
+}
+

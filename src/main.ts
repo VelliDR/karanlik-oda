@@ -62,7 +62,7 @@ document.getElementById('pwa-install-icon')!.innerHTML = ICONS.install;
 // Slider Registry
 type NumericSliderKey = keyof Omit<
   SliderSettings,
-  'preset' | 'quartzDate' | 'quartzDateText' | 'filmBorder' | 'exportFormat' | 'exportQuality'
+  'preset' | 'quartzDate' | 'quartzDateText' | 'filmBorder' | 'exportFormat' | 'exportQuality' | 'aiDepthEnabled' | 'aiFocalDepth' | 'aiShowDepthMap'
 >;
 
 const sliders: Record<NumericSliderKey, HTMLInputElement> = {
@@ -75,10 +75,23 @@ const sliders: Record<NumericSliderKey, HTMLInputElement> = {
   lightLeak: document.getElementById('slider-lightLeak') as HTMLInputElement,
   bleachBypass: document.getElementById('slider-bleachBypass') as HTMLInputElement,
   swirl: document.getElementById('slider-swirl') as HTMLInputElement,
+  aiDepthAperture: document.getElementById('slider-aiDepthAperture') as HTMLInputElement,
   proMist: document.getElementById('slider-proMist') as HTMLInputElement,
   chromatic: document.getElementById('slider-chromatic') as HTMLInputElement,
   vignette: document.getElementById('slider-vignette') as HTMLInputElement
 };
+
+// 🤖 AI Depth Anything Kontrol Elemanları
+const checkAiDepth = document.getElementById('check-aiDepth') as HTMLInputElement;
+const depthStatusBadge = document.getElementById('depth-status-badge') as HTMLElement;
+const depthProgressContainer = document.getElementById('depth-progress-container') as HTMLElement;
+const depthStatusText = document.getElementById('depth-status-text') as HTMLElement;
+const depthProgressVal = document.getElementById('depth-progress-val') as HTMLElement;
+const depthProgressBar = document.getElementById('depth-progress-bar') as HTMLElement;
+const depthControls = document.getElementById('depth-controls') as HTMLElement;
+const btnToggleDepthMap = document.getElementById('btn-toggle-depthmap') as HTMLButtonElement;
+const focalDepthBadge = document.getElementById('focal-depth-badge') as HTMLElement;
+const focusIndicator = document.getElementById('focus-indicator') as HTMLElement;
 
 // Initialize Core Engine
 const editor = new PhotoEditor(canvas);
@@ -218,6 +231,31 @@ function syncAllControlsUI(): void {
     quartzDateControls.classList.remove('opacity-50', 'pointer-events-none');
   } else {
     quartzDateControls.classList.add('opacity-50', 'pointer-events-none');
+  }
+
+  // AI Derinlik Arayüzü Eşitlemesi
+  checkAiDepth.checked = editor.settings.aiDepthEnabled;
+  if (editor.settings.aiDepthEnabled && editor.hasDepthMap) {
+    depthControls.classList.remove('hidden');
+    depthStatusBadge.innerText = 'AKTİF';
+    depthStatusBadge.className =
+      'text-[8px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30';
+  } else {
+    depthControls.classList.add('hidden');
+    depthStatusBadge.innerText = 'KAPALI';
+    depthStatusBadge.className =
+      'text-[8px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/60';
+  }
+
+  const depthPercent = Math.round(editor.settings.aiFocalDepth * 100);
+  const regionName =
+    editor.settings.aiFocalDepth > 0.65 ? 'Ön Plan' : editor.settings.aiFocalDepth > 0.35 ? 'Orta Alan' : 'Arka Plan';
+  focalDepthBadge.innerText = `Odak: %${depthPercent} (${regionName})`;
+
+  if (editor.settings.aiShowDepthMap) {
+    btnToggleDepthMap.classList.add('bg-amber-500/30', 'text-amber-300', 'border-amber-400');
+  } else {
+    btnToggleDepthMap.classList.remove('bg-amber-500/30', 'text-amber-300', 'border-amber-400');
   }
 
   updatePresetSelectionUI();
@@ -388,6 +426,97 @@ document.querySelectorAll<HTMLButtonElement>('.btn-border').forEach((btn) => {
       updateHistoryButtons();
     }
   });
+});
+
+// 🤖 3D Fiziksel Alan Derinliği & Depth Anything Kontrolleri
+checkAiDepth.addEventListener('change', async () => {
+  if (!editor.hasImage) {
+    checkAiDepth.checked = false;
+    showToast('Lütfen önce banyo edilecek bir fotoğraf yükleyin.', 'error', 3000);
+    return;
+  }
+
+  const enabled = checkAiDepth.checked;
+  if (enabled) {
+    depthProgressContainer.classList.remove('hidden');
+    depthStatusBadge.innerText = 'YÜKLENİYOR';
+    depthStatusBadge.className =
+      'text-[8px] font-mono px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30';
+
+    try {
+      await editor.setAiDepthEnabled(true, (percent, msg) => {
+        depthProgressBar.style.width = `${percent}%`;
+        depthProgressVal.innerText = `%${percent}`;
+        depthStatusText.innerText = msg;
+      });
+
+      depthProgressContainer.classList.add('hidden');
+      depthControls.classList.remove('hidden');
+      depthStatusBadge.innerText = 'AKTİF';
+      showToast('🤖 3D Fiziksel Alan Derinliği Hazır! Fotoğrafa dokunarak odaklayabilirsiniz.', 'info', 3500);
+    } catch (err: unknown) {
+      checkAiDepth.checked = false;
+      depthProgressContainer.classList.add('hidden');
+      depthStatusBadge.innerText = 'HATA';
+      depthStatusBadge.className =
+        'text-[8px] font-mono px-1.5 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-500/30';
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Derinlik motoru başlatılamadı: ${msg}`, 'error', 4500);
+    }
+  } else {
+    editor.setAiDepthEnabled(false);
+    depthControls.classList.add('hidden');
+    depthStatusBadge.innerText = 'KAPALI';
+    depthStatusBadge.className =
+      'text-[8px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/60';
+  }
+
+  history.push(editor.getSnapshot());
+  updateHistoryButtons();
+});
+
+btnToggleDepthMap.addEventListener('click', () => {
+  const show = !editor.settings.aiShowDepthMap;
+  editor.setAiShowDepthMap(show);
+  if (show) {
+    btnToggleDepthMap.classList.add('bg-amber-500/30', 'text-amber-300', 'border-amber-400');
+    showToast('👁️ 3D Derinlik Haritası İnceleme Modu', 'info', 2000);
+  } else {
+    btnToggleDepthMap.classList.remove('bg-amber-500/30', 'text-amber-300', 'border-amber-400');
+  }
+});
+
+// 🎯 Ekrana Dokunarak Odakla (Tap-to-Focus)
+canvas.addEventListener('click', (e: MouseEvent) => {
+  if (!editor.hasImage || !editor.settings.aiDepthEnabled || !editor.hasDepthMap) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const clickX = e.clientX - rect.left;
+  const clickY = e.clientY - rect.top;
+
+  const normX = Math.min(1.0, Math.max(0, clickX / rect.width));
+  const normY = Math.min(1.0, Math.max(0, clickY / rect.height));
+
+  const sampledZ = editor.sampleDepthAt(normX, normY);
+  editor.setAiFocalDepth(sampledZ);
+
+  const depthPercent = Math.round(sampledZ * 100);
+  const regionName = sampledZ > 0.65 ? 'Ön Plan' : sampledZ > 0.35 ? 'Orta Alan' : 'Arka Plan';
+  focalDepthBadge.innerText = `Odak: %${depthPercent} (${regionName})`;
+  showToast(`🎯 Odak Noktası Belirlendi: %${depthPercent} (${regionName})`, 'info', 1800);
+
+  // Görsel odak halkası animasyonu
+  const wrapperRect = canvasWrapper.getBoundingClientRect();
+  focusIndicator.style.left = `${e.clientX - wrapperRect.left}px`;
+  focusIndicator.style.top = `${e.clientY - wrapperRect.top}px`;
+  focusIndicator.classList.remove('hidden');
+
+  setTimeout(() => {
+    focusIndicator.classList.add('hidden');
+  }, 700);
+
+  history.push(editor.getSnapshot());
+  updateHistoryButtons();
 });
 
 // 🎲 Kör Makara (Analog Serendipity / Rastgele Banyo)

@@ -49,8 +49,9 @@
     <!-- Left: Canvas Viewport (7 cols on lg) -->
     <div class="lg:col-span-7 xl:col-span-8 bg-m3-surface p-2 rounded-2xl border border-m3-border flex flex-col justify-center items-center min-h-[360px] lg:h-[640px] relative overflow-hidden select-none shadow-2xl group" id="canvas-dropzone">
       
-      <div id="canvas-wrapper" class="w-full h-full flex items-center justify-center overflow-auto transition-transform duration-200">
+      <div id="canvas-wrapper" class="w-full h-full flex items-center justify-center overflow-auto transition-transform duration-200 relative">
         <canvas id="editor-canvas" class="max-w-full max-h-[320px] lg:max-h-[600px] rounded-xl shadow-2xl bg-black/60 object-contain cursor-zoom-in"></canvas>
+        <div id="focus-indicator" class="hidden pointer-events-none absolute w-10 h-10 -ml-5 -mt-5 rounded-full border-2 border-amber-400 bg-amber-400/20 shadow-lg shadow-amber-500/50 transition-all duration-300 z-30"></div>
       </div>
       
       <!-- Top Actions Bar inside Canvas -->
@@ -243,6 +244,58 @@
             </div>
             <input type="range" id="slider-swirl" min="0" max="100" value="0" class="w-full accent-amber-500">
             <p class="text-[8px] text-white/40 font-mono">Kenar astigmatizm ve dairesel bükülme kusuru</p>
+          </div>
+
+          <!-- 🤖 3D Fiziksel Alan Derinliği (Depth Anything V2) -->
+          <div class="border-t border-m3-border/50 pt-2.5 pb-1 space-y-2.5 bg-black/20 p-2.5 rounded-xl border border-white/5">
+            <div class="flex items-center justify-between">
+              <label class="flex items-center gap-2 cursor-pointer select-none">
+                <input type="checkbox" id="check-aiDepth" class="accent-amber-500 rounded">
+                <span class="text-[10px] font-mono font-bold text-amber-300">🤖 3D FİZİKSEL ALAN DERİNLİĞİ</span>
+              </label>
+              <span id="depth-status-badge" class="text-[8px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/60">KAPALI</span>
+            </div>
+
+            <!-- Model İlerleme Çubuğu -->
+            <div id="depth-progress-container" class="hidden space-y-1 bg-black/40 p-2 rounded-xl border border-white/10">
+              <div class="flex justify-between text-[8px] font-mono text-amber-200">
+                <span id="depth-status-text">Model hazırlanıyor...</span>
+                <span id="depth-progress-val">%0</span>
+              </div>
+              <div class="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
+                <div id="depth-progress-bar" class="bg-amber-400 h-full w-0 transition-all duration-150"></div>
+              </div>
+            </div>
+
+            <!-- AI Derinlik Kontrolleri (Açıkken aktif) -->
+            <div id="depth-controls" class="hidden space-y-2.5 pl-2 border-l-2 border-amber-500/40">
+              <p class="text-[8px] text-white/60 font-mono">
+                🎯 <strong>Dokunarak Odakla:</strong> Fotoğrafta odaklamak istediğiniz nesneye tıklayın.
+              </p>
+
+              <!-- Diyafram / DoF Slider -->
+              <div class="space-y-1">
+                <div class="flex justify-between text-[9px] font-mono text-white/90">
+                  <span>DİYAFRAM DERİNLİĞİ (DoF)</span>
+                  <span id="val-aiDepthAperture">50</span>
+                </div>
+                <input type="range" id="slider-aiDepthAperture" min="0" max="100" value="50" class="w-full accent-amber-400">
+                <div class="flex justify-between text-[7px] text-white/40 font-mono">
+                  <span>f/16 (Tüm Sahne Net)</span>
+                  <span>f/1.4 (Sığ Bokeh)</span>
+                </div>
+              </div>
+
+              <!-- Odak Göstergesi ve İnceleme Butonları -->
+              <div class="flex items-center gap-2 pt-1">
+                <button type="button" id="btn-toggle-depthmap" class="flex-1 py-1.5 px-2 text-[9px] font-mono font-semibold rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 transition-colors text-white/80 cursor-pointer">
+                  👁️ DERİNLİK HARİTASI
+                </button>
+                <div id="focal-depth-badge" class="text-[8px] font-mono px-2 py-1.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  Odak: %50
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- Black Pro-Mist -->

@@ -66,10 +66,77 @@ export function createNoisePattern(ctx: AnyRenderingContext2D): CanvasPattern | 
 }
 
 /**
- * 🌀 Helios 44M-4 Merceğinin Kedi Gözü (Cat-Eye) ve Teğetsel Dönen Bokeh (Swirl) Optiği.
- * Merkezdeki nesneyi keskin korurken, kenarlardaki optik vinyet ve astigmatizm bükülmesini simüle eder.
+ * 🤖 3D Fiziksel Alan Derinliği (DoF) Maskesi Üretici.
+ * Depth Anything V2 derinlik haritasını alır; seçilen odak düzlemi (focalDepth)
+ * ve diyafram açıklığına (aperture) göre fiziksel lens bulanıklık maskesi üretir.
  */
-export function applySwirlyBokeh(target: RenderTarget, intensity: number): void {
+export function generateDepthOfFieldMask(
+  depthCanvas: AnyCanvas,
+  width: number,
+  height: number,
+  focalDepth: number = 0.5,
+  aperture: number = 50
+): AnyCanvas {
+  const procW = Math.min(width, 1024);
+  const procH = Math.min(height, Math.round((procW * height) / width));
+
+  const sampleCanvas = createCompatibleCanvas(procW, procH);
+  const sCtx = sampleCanvas.getContext('2d') as AnyRenderingContext2D | null;
+  if (!sCtx) return depthCanvas;
+
+  sCtx.drawImage(depthCanvas as CanvasImageSource, 0, 0, procW, procH);
+  const imgData = sCtx.getImageData(0, 0, procW, procH);
+  const data = imgData.data;
+
+  // Diyafram toleransı: aperture 100 (f/1.4 sığ DoF) -> tolerans 0.04
+  // aperture 0 (f/16 geniş DoF) -> tolerans 0.35
+  const apertureFactor = aperture / 100;
+  const threshold = 0.35 - apertureFactor * 0.31;
+  const falloff = 0.16;
+
+  for (let i = 0; i < data.length; i += 4) {
+    const z = data[i] / 255;
+    const dist = Math.abs(z - focalDepth);
+
+    if (dist <= threshold) {
+      data[i + 3] = 0;
+    } else {
+      const blurFactor = Math.min(1.0, (dist - threshold) / falloff);
+      data[i + 3] = Math.round(255 * blurFactor);
+    }
+    data[i] = 0;
+    data[i + 1] = 0;
+    data[i + 2] = 0;
+  }
+
+  sCtx.putImageData(imgData, 0, 0);
+
+  const outCanvas = createCompatibleCanvas(width, height);
+  const oCtx = outCanvas.getContext('2d') as AnyRenderingContext2D | null;
+  if (!oCtx) return sampleCanvas;
+
+  oCtx.imageSmoothingEnabled = true;
+  oCtx.imageSmoothingQuality = 'high';
+  oCtx.drawImage(sampleCanvas as CanvasImageSource, 0, 0, width, height);
+
+  sampleCanvas.width = 0;
+  sampleCanvas.height = 0;
+
+  return outCanvas;
+}
+
+/**
+ * 🌀 Helios 44M-4 Merceğinin Kedi Gözü (Cat-Eye) ve Teğetsel Dönen Bokeh (Swirl) Optiği.
+ * Merkezdeki veya 3D odak düzlemindeki özneyi keskin korurken, odak dışı bölgelerde
+ * optik vinyet ve astigmatizm bükülmesini simüle eder.
+ */
+export function applySwirlyBokeh(
+  target: RenderTarget,
+  intensity: number,
+  depthMask?: AnyCanvas | null,
+  focalDepth: number = 0.5,
+  aperture: number = 50
+): void {
   if (intensity <= 0) return;
 
   const { ctx, width: w, height: h } = target;
@@ -106,30 +173,35 @@ export function applySwirlyBokeh(target: RenderTarget, intensity: number): void 
   }
   sCtx.globalAlpha = 1.0;
 
-  // Merkez netliğini koruyan, kenarlarda yumuşakça devreye giren radyal maske
-  const maskCanvas = createCompatibleCanvas(w, h);
-  const mCtx = maskCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (!mCtx) {
-    swirlCanvas.width = 0;
-    swirlCanvas.height = 0;
-    return;
+  // Maske seçimi: 3D Derinlik haritası varsa onu kullan, yoksa radyal merkeze dön
+  let maskCanvas: AnyCanvas;
+  if (depthMask) {
+    maskCanvas = generateDepthOfFieldMask(depthMask, w, h, focalDepth, aperture);
+  } else {
+    maskCanvas = createCompatibleCanvas(w, h);
+    const mCtx = maskCanvas.getContext('2d') as AnyRenderingContext2D | null;
+    if (!mCtx) {
+      swirlCanvas.width = 0;
+      swirlCanvas.height = 0;
+      return;
+    }
+
+    const grad = mCtx.createRadialGradient(
+      cx,
+      cy,
+      centerRadius * 0.5,
+      cx,
+      cy,
+      maxRadius * 0.85
+    );
+    grad.addColorStop(0, 'rgba(0,0,0,0)');
+    grad.addColorStop(0.35, 'rgba(0,0,0,0.08)');
+    grad.addColorStop(0.7, 'rgba(0,0,0,0.75)');
+    grad.addColorStop(1, 'rgba(0,0,0,1.0)');
+
+    mCtx.fillStyle = grad;
+    mCtx.fillRect(0, 0, w, h);
   }
-
-  const grad = mCtx.createRadialGradient(
-    cx,
-    cy,
-    centerRadius * 0.5,
-    cx,
-    cy,
-    maxRadius * 0.85
-  );
-  grad.addColorStop(0, 'rgba(0,0,0,0)');
-  grad.addColorStop(0.35, 'rgba(0,0,0,0.08)');
-  grad.addColorStop(0.7, 'rgba(0,0,0,0.75)');
-  grad.addColorStop(1, 'rgba(0,0,0,1.0)');
-
-  mCtx.fillStyle = grad;
-  mCtx.fillRect(0, 0, w, h);
 
   const blendCanvas = createCompatibleCanvas(w, h);
   const bCtx = blendCanvas.getContext('2d') as AnyRenderingContext2D | null;

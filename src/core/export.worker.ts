@@ -1,4 +1,5 @@
 import {
+  AnyCanvas,
   ExportFormat,
   RenderTarget,
   RotationDegree,
@@ -19,7 +20,7 @@ import {
   createCompatibleCanvas,
   createNoisePattern
 } from './optics';
-import { generateSkinProtectionMask } from './aspect-shield';
+import { AspectROI, generateSkinProtectionMask, projectDepthMapFromRaw } from './aspect-shield';
 import { inject300DpiAndExifToJpeg, inject300DpiToPng } from './metadata';
 
 export interface WorkerExportPayload {
@@ -30,6 +31,8 @@ export interface WorkerExportPayload {
   quality: number;
   originalMetadataSegments: Uint8Array[];
   dpi: number;
+  rawDepth?: Float32Array | null;
+  depthRoi?: AspectROI | null;
 }
 
 export type WorkerMessageToMain =
@@ -45,7 +48,9 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     format,
     quality,
     originalMetadataSegments,
-    dpi = 300
+    dpi = 300,
+    rawDepth,
+    depthRoi
   } = e.data;
 
   try {
@@ -83,7 +88,7 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     } as WorkerMessageToMain);
 
     // Çekirdek pipeline'ı çalıştır
-    renderPipelineInWorker(target, imageBitmap, settings, rotation, noisePattern);
+    renderPipelineInWorker(target, imageBitmap, settings, rotation, noisePattern, rawDepth, depthRoi);
 
     self.postMessage({
       type: 'progress',
@@ -134,7 +139,9 @@ function renderPipelineInWorker(
   sourceImg: ImageBitmap,
   settings: SliderSettings,
   rotation: RotationDegree,
-  noisePattern: CanvasPattern | null
+  noisePattern: CanvasPattern | null,
+  rawDepth?: Float32Array | null,
+  depthRoi?: AspectROI | null
 ): void {
   const { ctx, width: w, height: h } = target;
   ctx.clearRect(0, 0, w, h);
@@ -218,9 +225,23 @@ function renderPipelineInWorker(
     applyBlackProMist(target, settings.proMist);
   }
 
-  // Helios 44M Swirl Bokeh
+  // Helios 44M Swirl Bokeh (Kedi Gözü & 3D Derinlik Kalkanı)
   if (settings.swirl > 0) {
-    applySwirlyBokeh(target, settings.swirl);
+    let fullDepthCanvas: AnyCanvas | null = null;
+    if (settings.aiDepthEnabled && rawDepth && depthRoi) {
+      fullDepthCanvas = projectDepthMapFromRaw(rawDepth, depthRoi, w, h);
+    }
+    applySwirlyBokeh(
+      target,
+      settings.swirl,
+      fullDepthCanvas,
+      settings.aiFocalDepth,
+      settings.aiDepthAperture
+    );
+    if (fullDepthCanvas) {
+      fullDepthCanvas.width = 0;
+      fullDepthCanvas.height = 0;
+    }
   }
 
   // Chromatic Aberration

@@ -1,4 +1,5 @@
 import {
+  AnyCanvas,
   EditorSnapshot,
   ExportFormat,
   RenderTarget,
@@ -20,7 +21,12 @@ import {
   createCompatibleCanvas,
   createNoisePattern
 } from './optics';
-import { generateSkinProtectionMask } from './aspect-shield';
+import {
+  AspectROI,
+  generateSkinProtectionMask,
+  prepareDepthInputTensor,
+  projectDepthMapFromRaw
+} from './aspect-shield';
 import {
   calculatePrintDimensions,
   extractJpegMetadataSegments,
@@ -45,6 +51,11 @@ export const DEFAULT_SETTINGS: SliderSettings = {
   chromatic: 0,
   proMist: 0,
   vignette: 0,
+
+  aiDepthEnabled: false,
+  aiDepthAperture: 50,
+  aiFocalDepth: 0.5,
+  aiShowDepthMap: false,
 
   quartzDate: false,
   quartzDateText: "'98 10 24",
@@ -94,6 +105,15 @@ export class PhotoEditor {
 
   private isRenderPending = false;
   private noisePattern: CanvasPattern | null = null;
+
+  // 🤖 3D Alan Derinliği & Depth Anything V2 Durumları
+  private depthWorker: Worker | null = null;
+  private depthRaw: Float32Array | null = null;
+  private depthRoi: AspectROI | null = null;
+  private depthCanvas: AnyCanvas | null = null;
+  public isDepthAnalyzing = false;
+  public depthStatusMessage = '';
+  public depthProgress = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -218,6 +238,149 @@ export class PhotoEditor {
     this.scheduleRender();
   }
 
+  /**
+   * Derinlik haritasının hazır olup olmadığını bildirir.
+   */
+  public get hasDepthMap(): boolean {
+    return this.depthCanvas !== null;
+  }
+
+  /**
+   * 🤖 Depth Anything V2 modelini Web Worker üzerinden izole çalıştırır.
+   * Model indirme ilerlemesini ve tensör hesaplamasını yönetir.
+   */
+  public async analyzeDepth(
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<void> {
+    if (!this.previewImg && !this.originalImg) return;
+    if (this.isDepthAnalyzing) return;
+
+    this.isDepthAnalyzing = true;
+    this.depthProgress = 0;
+    this.depthStatusMessage = 'AI tensörü hazırlanıyor...';
+    if (onProgress) onProgress(0, this.depthStatusMessage);
+
+    const sourceImg = this.previewImg || this.originalImg!;
+    const isTransposed = this.rotation === 90 || this.rotation === 270;
+    const w = isTransposed ? sourceImg.naturalHeight : sourceImg.naturalWidth;
+    const h = isTransposed ? sourceImg.naturalWidth : sourceImg.naturalHeight;
+
+    const sourceCanvas = createCompatibleCanvas(w, h);
+    const sCtx = sourceCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!sCtx) {
+      this.isDepthAnalyzing = false;
+      return;
+    }
+
+    if (this.rotation !== 0) {
+      sCtx.translate(w / 2, h / 2);
+      sCtx.rotate((this.rotation * Math.PI) / 180);
+      sCtx.drawImage(
+        sourceImg,
+        -sourceImg.naturalWidth / 2,
+        -sourceImg.naturalHeight / 2
+      );
+    } else {
+      sCtx.drawImage(sourceImg, 0, 0);
+    }
+
+    const { floatArray, roi } = prepareDepthInputTensor(sourceCanvas, w, h, 518);
+    sourceCanvas.width = 0;
+    sourceCanvas.height = 0;
+
+    return new Promise((resolve, reject) => {
+      if (!this.depthWorker) {
+        this.depthWorker = new Worker(new URL('./depth.worker.ts', import.meta.url), {
+          type: 'module'
+        });
+      }
+
+      const worker = this.depthWorker;
+
+      const handleMessage = (e: MessageEvent) => {
+        const data = e.data || {};
+        if (data.type === 'download-progress') {
+          this.depthProgress = data.percent;
+          this.depthStatusMessage = `Model indiriliyor (%${data.percent})...`;
+          if (onProgress) onProgress(data.percent, this.depthStatusMessage);
+        } else if (data.type === 'status') {
+          this.depthStatusMessage = data.message;
+          if (onProgress) onProgress(this.depthProgress, data.message);
+        } else if (data.type === 'success') {
+          worker.removeEventListener('message', handleMessage);
+          this.depthRaw = data.rawDepth;
+          this.depthRoi = roi;
+          this.depthCanvas = projectDepthMapFromRaw(this.depthRaw!, roi, w, h, 518);
+          this.isDepthAnalyzing = false;
+          this.depthProgress = 100;
+          this.depthStatusMessage = '3D Alan Derinliği Aktif';
+          if (onProgress) onProgress(100, this.depthStatusMessage);
+          this.render();
+          resolve();
+        } else if (data.type === 'error') {
+          worker.removeEventListener('message', handleMessage);
+          this.isDepthAnalyzing = false;
+          this.depthStatusMessage = data.message;
+          if (onProgress) onProgress(0, data.message);
+          reject(new Error(data.message));
+        }
+      };
+
+      worker.addEventListener('message', handleMessage);
+      worker.postMessage({ type: 'run', floatArray }, [floatArray.buffer]);
+    });
+  }
+
+  /**
+   * Tuval üzerinde tıklanan koordinattaki (0.0 - 1.0 aralığında) derinlik değerini döndürür.
+   */
+  public sampleDepthAt(normalizedX: number, normalizedY: number): number {
+    if (!this.depthCanvas) return 0.5;
+    const w = this.depthCanvas.width;
+    const h = this.depthCanvas.height;
+    if (w <= 0 || h <= 0) return 0.5;
+
+    const x = Math.min(w - 1, Math.max(0, Math.floor(normalizedX * w)));
+    const y = Math.min(h - 1, Math.max(0, Math.floor(normalizedY * h)));
+
+    const ctx = this.depthCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!ctx) return 0.5;
+
+    try {
+      const pixel = ctx.getImageData(x, y, 1, 1).data;
+      return pixel[0] / 255;
+    } catch {
+      return 0.5;
+    }
+  }
+
+  public async setAiDepthEnabled(
+    enabled: boolean,
+    onProgress?: (progress: number, message: string) => void
+  ): Promise<void> {
+    this.settings.aiDepthEnabled = enabled;
+    if (enabled && !this.depthCanvas && (this.previewImg || this.originalImg)) {
+      await this.analyzeDepth(onProgress);
+    } else {
+      this.render();
+    }
+  }
+
+  public setAiDepthAperture(val: number): void {
+    this.settings.aiDepthAperture = Math.max(0, Math.min(100, val));
+    this.render();
+  }
+
+  public setAiFocalDepth(val: number): void {
+    this.settings.aiFocalDepth = Math.max(0, Math.min(1.0, val));
+    this.render();
+  }
+
+  public setAiShowDepthMap(show: boolean): void {
+    this.settings.aiShowDepthMap = show;
+    this.render();
+  }
+
   public scheduleRender(): void {
     if (this.isRenderPending) return;
     this.isRenderPending = true;
@@ -334,7 +497,9 @@ export class PhotoEditor {
         format,
         quality,
         originalMetadataSegments: this.originalMetadataSegments,
-        dpi: 300
+        dpi: 300,
+        rawDepth: this.depthRaw ? this.depthRaw.slice(0) : null,
+        depthRoi: this.depthRoi
       };
 
       // bitmap nesnesini transfer et (zero-copy memory transfer!)
@@ -418,6 +583,12 @@ export class PhotoEditor {
     const { ctx, width: w, height: h } = target;
     ctx.clearRect(0, 0, w, h);
 
+    // 👁️ 3D Derinlik Haritası İnceleme Modu (Siyah-Beyaz)
+    if (settings.aiShowDepthMap && this.depthCanvas) {
+      ctx.drawImage(this.depthCanvas as CanvasImageSource, 0, 0, w, h);
+      return;
+    }
+
     const preset = PRESETS[settings.preset] || PRESETS.none;
 
     const exp = 100 + settings.exposure;
@@ -498,9 +669,15 @@ export class PhotoEditor {
       applyBlackProMist(target, settings.proMist);
     }
 
-    // Helios 44M Swirl Bokeh (Kedi Gözü & Merkez Koruması)
+    // Helios 44M Swirl Bokeh (Kedi Gözü & 3D Derinlik Koruması)
     if (settings.swirl > 0) {
-      applySwirlyBokeh(target, settings.swirl);
+      applySwirlyBokeh(
+        target,
+        settings.swirl,
+        settings.aiDepthEnabled ? this.depthCanvas : null,
+        settings.aiFocalDepth,
+        settings.aiDepthAperture
+      );
     }
 
     // Radyal Chromatic Aberration (Merkez Netliği Koruması)
@@ -592,8 +769,23 @@ export class PhotoEditor {
     }
   }
 
+  private cleanupDepth(): void {
+    this.depthRaw = null;
+    this.depthRoi = null;
+    if (this.depthCanvas) {
+      this.depthCanvas.width = 0;
+      this.depthCanvas.height = 0;
+      this.depthCanvas = null;
+    }
+  }
+
   public destroy(): void {
     this.cleanupUrls();
+    this.cleanupDepth();
+    if (this.depthWorker) {
+      this.depthWorker.terminate();
+      this.depthWorker = null;
+    }
     this.originalImg = null;
     this.previewImg = null;
     this.originalMetadataSegments = [];

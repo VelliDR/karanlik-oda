@@ -44,6 +44,12 @@ export interface SliderSettings {
   proMist: number;      // 0 to 100 (Black Pro-Mist difüzyonu)
   vignette: number;     // 0 to 100 (Mekanik vinyet)
 
+  // 3D Fiziksel Alan Derinliği & Depth Anything AI
+  aiDepthEnabled: boolean;     // 3D Alan Derinliği açık/kapalı
+  aiDepthAperture: number;    // 0 to 100 (Diyafram açıklığı / alan derinliği toleransı)
+  aiFocalDepth: number;       // 0.0 to 1.0 (Odak düzleminin derinliği)
+  aiShowDepthMap: boolean;    // Derinlik haritası görsel önizleme modu (S/B)
+
   // Baskı & Çıktı Formatı
   quartzDate: boolean;
   quartzDateText: string;
