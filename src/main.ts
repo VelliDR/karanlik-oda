@@ -70,6 +70,7 @@ const sliders: Record<NumericSliderKey, HTMLInputElement> = {
   contrast: document.getElementById('slider-contrast') as HTMLInputElement,
   saturation: document.getElementById('slider-saturation') as HTMLInputElement,
   warmth: document.getElementById('slider-warmth') as HTMLInputElement,
+  skinProtection: document.getElementById('slider-skinProtection') as HTMLInputElement,
   grain: document.getElementById('slider-grain') as HTMLInputElement,
   lightLeak: document.getElementById('slider-lightLeak') as HTMLInputElement,
   bleachBypass: document.getElementById('slider-bleachBypass') as HTMLInputElement,

@@ -15,6 +15,7 @@ Fotoğraflarınız cihazınızdan dışarı çıkmaz, uzak sunuculara yüklenmez
 * **🌀 Helios 44M Kedi Gözü (Cat-Eye) Swirl:** Biotar optik formülündeki mekanik pupil kesilmesini ve alan eğriliğini simüle eder. Merkezdeki odak alanı netliğini korurken, kenarlara doğru teğetsel eliptik astigmatizm uygulanır.
 * **⚡ Radyal Kromatik Sapma:** Optik merkezde netlik korunur; mercek kenarlarına doğru kademeli olarak artan prizmatik kırmızı ve mavi ayrışması simüle edilir.
 * **🌫️ Black Pro-Mist Difüzyonu:** Gölgelerdeki siyah seviyesini kilitleyerek soluklaşmayı önler; yalnızca orta ve yüksek ışık kaynaklarına yumuşak difüzyon uygular.
+* **🛡️ En-Boy Oranı Korumalı Ten Kalkanı:** Kolorimetrik analiz için görseli küçültürken en-boy oranını letterbox/unpad kalkanıyla korur. Gotik veya Leica Nordic gibi sert split-toning banyolarında insan ten tonunu maskeleyerek sıcak Portra tonlarını korur; önizleme ile tam çözünürlüklü dışa aktarma arasında 1 piksel bile kayma yapmaz.
 * **🎨 Display P3 Geniş Renk Gamutu:** Destekleyen ekran ve cihazlarda (modern iPhone, Mac ve Android amiral gemileri) tuval P3 renk uzayında işlenerek renk kırpılmaları önlenir.
 
 ---

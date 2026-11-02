@@ -36,6 +36,7 @@ export interface SliderSettings {
   grain: number;        // 0 to 100 (Ekstra manuel gren ayarı)
   lightLeak: number;    // 0 to 100 (Analog ışık sızıntısı)
   bleachBypass: number; // 0 to 100 (Gümüş tutma banyosu)
+  skinProtection: number; // 0 to 100 (Akıllı En-Boy Oranı Korumalı Ten Kalkanı)
 
   // Vintage Optik Kusurlar
   swirl: number;        // 0 to 100 (Helios 44M dönen bokeh)

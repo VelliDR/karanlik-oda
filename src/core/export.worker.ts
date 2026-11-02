@@ -16,8 +16,10 @@ import {
   applyQuartzDate,
   applySwirlyBokeh,
   applyVignette,
+  createCompatibleCanvas,
   createNoisePattern
 } from './optics';
+import { generateSkinProtectionMask } from './aspect-shield';
 import { inject300DpiAndExifToJpeg, inject300DpiToPng } from './metadata';
 
 export interface WorkerExportPayload {
@@ -164,14 +166,46 @@ function renderPipelineInWorker(
     ctx.restore();
   }
 
-  // Preset Renk Örtüsü
+  // Preset Renk Örtüsü - En-Boy Oranı Korumalı Ten Kalkanı ile
   if (preset.overlayColor && preset.overlayOpacity > 0) {
-    ctx.save();
-    ctx.globalCompositeOperation = preset.blendMode;
-    ctx.globalAlpha = preset.overlayOpacity;
-    ctx.fillStyle = preset.overlayColor;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
+    if (settings.skinProtection > 0) {
+      const skinMask = generateSkinProtectionMask(target.canvas, w, h, settings.skinProtection);
+      if (skinMask) {
+        const overlayCanvas = createCompatibleCanvas(w, h);
+        const oCtx = overlayCanvas.getContext('2d');
+        if (oCtx) {
+          oCtx.fillStyle = preset.overlayColor;
+          oCtx.fillRect(0, 0, w, h);
+          oCtx.globalCompositeOperation = 'destination-out';
+          oCtx.drawImage(skinMask as CanvasImageSource, 0, 0);
+
+          ctx.save();
+          ctx.globalCompositeOperation = preset.blendMode;
+          ctx.globalAlpha = preset.overlayOpacity;
+          ctx.drawImage(overlayCanvas as CanvasImageSource, 0, 0);
+          ctx.restore();
+
+          overlayCanvas.width = 0;
+          overlayCanvas.height = 0;
+        }
+        skinMask.width = 0;
+        skinMask.height = 0;
+      } else {
+        ctx.save();
+        ctx.globalCompositeOperation = preset.blendMode;
+        ctx.globalAlpha = preset.overlayOpacity;
+        ctx.fillStyle = preset.overlayColor;
+        ctx.fillRect(0, 0, w, h);
+        ctx.restore();
+      }
+    } else {
+      ctx.save();
+      ctx.globalCompositeOperation = preset.blendMode;
+      ctx.globalAlpha = preset.overlayOpacity;
+      ctx.fillStyle = preset.overlayColor;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
+    }
   }
 
   // Bleach Bypass
