@@ -1,46 +1,45 @@
-# 🧪 Foton: Karanlık Oda (v3.0 - TypeScript & Vite)
+# 🧪 Foton: Karanlık Oda
 
-Abonelik ücretlerinden, hantal arayüzlerden ve fotoğrafları uzak sunuculara yükleme zorunluluğundan sıkılanlar için geliştirilmiş, **%100 çevrimdışı (offline-first)** çalışan, tarayıcı tabanlı bir analog banyo istasyonu ve optik simülatörü.
+Tarayıcı üzerinde **%100 çevrimdışı (offline-first)** çalışan, analog film emülsiyonunu ve vintage lens karakteristiklerini simüle eden açık kaynaklı bir banyo istasyonudur.
 
-Fotoğraflarınız cihazınızdan asla çıkmaz, analiz edilmez veya bir buluta yüklenmez. Tüm işleme mantığı tamamen tarayıcınızın içinde, **TypeScript, Vite, HTML5 Canvas ve Web Worker/PWA** gücüyle yerel olarak çalışır.
-
----
-
-## 🌀 Neden Karanlık Oda?
-
-Modern dijital kameralar jilet gibi keskin, kusursuz ama bir o kadar da ruhsuz fotoğraflar üretiyor. Karanlık Oda, optik fiziğin ve kimyanın o "kusurlu ama sıcak" estetiğini (**Wabi-Sabi**) dijital görsellere geri kazandırmayı amaçlar.
-
-### 🔬 Karakteristik Özellikler
-
-* **🌀 Helios Swirl (Dönen Bokeh):** Efsanevi Rus merceği Helios 44M-4'ün kenar bölgelerindeki mekanik vinyet ve astigmatizm hatasını (dairesel bükülme) matematiksel olarak simüle eder.
-* **🎬 CineStill 800T Halation (Kırmızı Parlama):** Sinema filmlerinin arkasındaki ışık emici katmanın (rem-jet) temizlenmesiyle oluşan o ikonik kimyasal reaksiyonu taklit eder. Parlak ışıkları izole eder, CineStill kırmızısına boyar ve yumuşatarak görselin üzerine mühürler.
-* **⚡ Chromatic Aberration (Renk Sapması):** Eski manuel lenslerin odak kaçırma hatasını, kırmızı ve cyan kanallarını milimetrik olarak GPU üzerinde kaydırıp ölçeklendirerek canlandırır.
-* **🌾 Leica Nordic Cool:** Gölgeleri dondurucu bir İskandinav lacivertine bükerken, cilt tonlarını bozmadan sıcak tutan özel bir split-toning reçetesi.
-* **👁️ Anlık Karşılaştır (Before / After):** Ekrana veya butona basılı tutarak (veya klavyede Boşluk tuşuna basarak) yapılan düzenlemeleri orijinal ham fotoğrafla anında kıyaslama imkanı.
-* **↩️ Geri Al / İleri Al (Undo / Redo):** Yapılan her ayar ve reçete seçimi için tam geçmiş adımları (`Ctrl+Z`, `Ctrl+Y`).
-* **🔄 Kayıpsız Döndürme (Lossless Rotation):** Görseli JPEG sıkıştırmasına sokmadan, doğrudan tuval koordinat matrisiyle kayıpsız 90° döndürme.
-* **🍏 Çevrimdışı Apple HEIC / HEIF Desteği:** iPhone ve güncel mobil cihazların fotoğraflarını cihaz içinde otomatik olarak JPEG standardına dönüştürür.
-* **🛡️ Sıfır Bellek Kopyası (Zero-Copy):** `readAsDataURL` yerine `URL.createObjectURL` ve `createImageBitmap` kullanılarak 16MP+ görsellerde tarayıcının çökmesi engellenir.
+Fotoğraflarınız cihazınızdan dışarı çıkmaz, uzak sunuculara yüklenmez veya analiz edilmez. Tüm işleme hattı yerel olarak **TypeScript, Canvas API, Web Worker ve PWA** mimarisi üzerinde yürütülür.
 
 ---
 
-## 🛠️ Teknoloji Yığını (v3.0 Mimarisi)
+## 🔬 Optik ve Kimyasal Modelleme
 
-* **Build Tool:** [Vite 6+](https://vitejs.dev/) — Anında HMR, yüksek hızlı modül paketleme
-* **Dil:** [TypeScript (Strict Mode)](https://www.typescriptlang.org/) — Güçlü tip güvenliği ve sıfır çalışma zamanı hatası
-* **Stil:** [Tailwind CSS v4](https://tailwindcss.com/) — Sıfır çalışma zamanı CDN gecikmesi, derlenmiş yerel CSS
-* **PWA:** [vite-plugin-pwa (Workbox)](https://vite-pwa-org.netlify.app/) — Tam çevrimdışı önbellekleme ve uygulama kurulumu
-* **Optik Motoru:** Özel HTML5 2D Canvas & Matrix Compositing Pipeline
+* **🖨️ 300 DPI Arşivsel Baskı Standardı:** Dışa aktarılan PNG dosyalarına `pHYs` fiziksel piksel bloğu (11.811 px/m), JPEG dosyalarına ise 300 DPI JFIF başlığı mühürlenir. Çıktılar fine-art baskı stüdyolarında doğrudan doğru fiziksel boyutlarıyla tanınır.
+* **🛡️ Kayıpsız EXIF ve ICC Profil Koruması:** Kamera modeli, lens bilgisi, diyafram, enstantane, ISO ve renk profili gibi orijinal metaveriler işlenmiş JPEG çıktısına korunarak aktarılır.
+* **🌾 Luminans-Uyarlamalı Analog Gren:** Tekrarlayan dijital gürültü yerine Box-Muller Gauss dağılımı kullanılır. Gren yoğunluğu orta tonlarda (%18 gri, Zone V) doğal olarak belirginleşirken, derin gölgelerde ve patlamış beyazlarda sönümlenir.
+* **🎬 CineStill 800T Çift Loblu Halasyon:** Sinema filmlerinde rem-jet katmanının eksikliğinden doğan ışık sekmesini taklit eder. Işık çekirdeğinin beyazı korunurken, sınır hatlarında sıcak turuncu-kızıl kor ve dış kırmızı saçılma oluşturulur.
+* **🌀 Helios 44M Kedi Gözü (Cat-Eye) Swirl:** Biotar optik formülündeki mekanik pupil kesilmesini ve alan eğriliğini simüle eder. Merkezdeki odak alanı netliğini korurken, kenarlara doğru teğetsel eliptik astigmatizm uygulanır.
+* **⚡ Radyal Kromatik Sapma:** Optik merkezde netlik korunur; mercek kenarlarına doğru kademeli olarak artan prizmatik kırmızı ve mavi ayrışması simüle edilir.
+* **🌫️ Black Pro-Mist Difüzyonu:** Gölgelerdeki siyah seviyesini kilitleyerek soluklaşmayı önler; yalnızca orta ve yüksek ışık kaynaklarına yumuşak difüzyon uygular.
+* **🎨 Display P3 Geniş Renk Gamutu:** Destekleyen ekran ve cihazlarda (modern iPhone, Mac ve Android amiral gemileri) tuval P3 renk uzayında işlenerek renk kırpılmaları önlenir.
 
 ---
 
-## 💻 Geliştirme ve Kurulum
+## ⚡ Performans ve PWA Mimarisi
 
-### Gereksinimler
-* Node.js 18+ (Node 20+ önerilir)
-* npm veya pnpm
+* **Arka Plan Banyo Motoru (Web Worker + OffscreenCanvas):** 16MP–48MP tam çözünürlüklü dışa aktarma işlemleri ana iş parçacığından koparılarak Web Worker üzerinde çalıştırılır. Arayüzde donma yaşanmaz, işlem adımları anlık olarak gösterilir.
+* **Screen Wake Lock API:** Yüksek çözünürlüklü banyo esnasında mobil cihaz ekranının kararması veya uyku moduna geçmesi önlenir.
+* **Masaüstü File Handling API:** PWA kurulduğunda işletim sistemiyle dosya ilişkilendirmesi sağlanır (`.jpg`, `.png`, `.webp`, `.heic` dosyaları "Birlikte Aç" veya çift tıklama ile doğrudan açılabilir).
+* **Apple HEIC / HEIF Desteği:** Güncel iPhone fotoğrafları tarayıcı içinde yerel olarak çözümlenir.
+* **Anlık Karşılaştırma & Geçmiş:** Düzenlemeleri orijinal ham fotoğrafla kıyaslama (`Boşluk` veya basılı tutma) ve çok adımlı geri/ileri alma (`Ctrl+Z`, `Ctrl+Y`).
 
-### Projeyi Başlatma
+---
+
+## 🛠️ Teknoloji Yığını
+
+* **Paketleyici:** [Vite](https://vitejs.dev/)
+* **Dil:** [TypeScript](https://www.typescriptlang.org/) (Strict Mode)
+* **Arayüz & Stil:** [Tailwind CSS v4](https://tailwindcss.com/)
+* **PWA:** [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) (Workbox çevrimdışı önbellek)
+* **İşlem Motoru:** HTML5 Canvas, OffscreenCanvas ve Web Worker
+
+---
+
+## 💻 Kurulum ve Geliştirme
 
 ```bash
 # Bağımlılıkları yükleyin
@@ -49,7 +48,7 @@ npm install
 # Geliştirme sunucusunu başlatın
 npm run dev
 
-# Üretim (Production) derlemesi alın
+# Üretim derlemesi alın
 npm run build
 
 # Üretim çıktısını yerel olarak önizleyin
@@ -60,11 +59,9 @@ npm run preview
 
 ## 📱 Kurulum (PWA)
 
-Karanlık Oda, tamamen çevrimdışı çalışabilen modern bir Progressive Web App (PWA) uygulamasıdır:
-
-1. Uygulamayı mobil veya masaüstü tarayıcınızda açın.
-2. Sağ üstte beliren **"Yükle"** butonuna dokunun (veya tarayıcı menüsünden "Ana Ekrana Ekle"yi seçin).
-3. İnternet bağlantınız olmasa bile cihazınızda yerel bir uygulama gibi bağımsız pencerede kullanın.
+1. Uygulamayı modern bir mobil veya masaüstü tarayıcıda açın.
+2. Sağ üstteki **"Yükle"** butonuna tıklayın (veya tarayıcı menüsünden "Ana Ekrana Ekle"yi seçin).
+3. İnternet bağlantısı olmadan bağımsız bir masaüstü/mobil uygulama gibi kullanın.
 
 ---
 

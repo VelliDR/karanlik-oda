@@ -39,6 +39,28 @@ export default defineConfig({
             type: 'image/png',
             purpose: 'maskable'
           }
+        ],
+        file_handlers: [
+          {
+            action: './index.html',
+            name: 'Analog Fotoğraflar',
+            accept: {
+              'image/jpeg': ['.jpg', '.jpeg'],
+              'image/png': ['.png'],
+              'image/webp': ['.webp'],
+              'image/heic': ['.heic'],
+              'image/heif': ['.heif']
+            }
+          }
+        ],
+        shortcuts: [
+          {
+            name: 'Yeni Fotoğraf Banyo Et',
+            short_name: 'Yeni Banyo',
+            description: 'Karanlık Oda ile yeni bir fotoğraf düzenle',
+            url: './index.html',
+            icons: [{ src: 'icon-192.png', sizes: '192x192' }]
+          }
         ]
       },
       workbox: {

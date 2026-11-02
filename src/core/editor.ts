@@ -19,6 +19,13 @@ import {
   applyVignette,
   createNoisePattern
 } from './optics';
+import {
+  calculatePrintDimensions,
+  extractJpegMetadataSegments,
+  inject300DpiAndExifToJpeg,
+  inject300DpiToPng,
+  PrintDimensions
+} from './metadata';
 
 export const DEFAULT_SETTINGS: SliderSettings = {
   exposure: 0,
@@ -43,6 +50,31 @@ export const DEFAULT_SETTINGS: SliderSettings = {
   exportQuality: 1.0         // %100 maksimum kalite
 };
 
+function getOptimal2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const isP3Supported =
+    typeof window !== 'undefined' &&
+    window.matchMedia &&
+    window.matchMedia('(color-gamut: p3)').matches;
+
+  if (isP3Supported) {
+    try {
+      const p3Ctx = canvas.getContext('2d', {
+        colorSpace: 'display-p3',
+        willReadFrequently: true
+      });
+      if (p3Ctx) return p3Ctx;
+    } catch {
+      // P3 desteklenmiyorsa sRGB'ye devam et
+    }
+  }
+
+  const srgbCtx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!srgbCtx) {
+    throw new Error('Canvas 2D bağlamı oluşturulamadı.');
+  }
+  return srgbCtx;
+}
+
 export class PhotoEditor {
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -51,6 +83,7 @@ export class PhotoEditor {
   private previewImg: HTMLImageElement | null = null;
   private currentObjectUrl: string | null = null;
   private previewObjectUrl: string | null = null;
+  private originalMetadataSegments: Uint8Array[] = [];
 
   public settings: SliderSettings = { ...DEFAULT_SETTINGS };
   public rotation: RotationDegree = 0;
@@ -61,11 +94,7 @@ export class PhotoEditor {
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) {
-      throw new Error('Canvas 2D bağlamı oluşturulamadı.');
-    }
-    this.ctx = ctx;
+    this.ctx = getOptimal2DContext(canvas);
   }
 
   public get hasImage(): boolean {
@@ -82,17 +111,35 @@ export class PhotoEditor {
   }
 
   /**
-   * Sıfır kopyalı Blob/File nesnesini yükler ve düşük bellekli önizleme oluşturur.
+   * 300 DPI baskı boyutlarını (cm, inç, megapiksel) döndürür.
+   */
+  public get printDimensions(): PrintDimensions | null {
+    const dims = this.originalDimensions;
+    if (!dims) return null;
+    return calculatePrintDimensions(dims.width, dims.height, 300);
+  }
+
+  /**
+   * Sıfır kopyalı Blob/File nesnesini yükler, metaverilerini ayıklar ve kayıpsız net önizleme oluşturur.
    */
   public async loadImageFromBlob(blob: Blob): Promise<void> {
     this.cleanupUrls();
 
+    // 1. Orijinal dosyanın EXIF ve ICC profil segmentlerini koruma için çıkar
+    try {
+      const buffer = await blob.arrayBuffer();
+      this.originalMetadataSegments = extractJpegMetadataSegments(buffer);
+    } catch {
+      this.originalMetadataSegments = [];
+    }
+
+    // 2. Tam çözünürlüklü görseli yükle
     this.currentObjectUrl = URL.createObjectURL(blob);
     const img = await this.loadImageElement(this.currentObjectUrl);
     this.originalImg = img;
 
-    // 1200px sınırında akıcı önizleme görseli oluştur
-    const maxDim = 1200;
+    // 3. Akıcı ve kayıpsız 1600px önizleme görseli oluştur (JPEG bloklanması olmadan)
+    const maxDim = 1600;
     let pw = img.naturalWidth;
     let ph = img.naturalHeight;
 
@@ -109,13 +156,14 @@ export class PhotoEditor {
     const previewCanvas = document.createElement('canvas');
     previewCanvas.width = pw;
     previewCanvas.height = ph;
-    const pCtx = previewCanvas.getContext('2d');
-    if (!pCtx) throw new Error('Önizleme tuvali oluşturulamadı.');
-
+    const pCtx = getOptimal2DContext(previewCanvas);
+    pCtx.imageSmoothingEnabled = true;
+    pCtx.imageSmoothingQuality = 'high';
     pCtx.drawImage(img, 0, 0, pw, ph);
 
+    // Kayıpsız PNG formatında önizleme oluştur (DCT kirliliği ve renk kaybı yok)
     const previewBlob = await new Promise<Blob>((resolve) => {
-      previewCanvas.toBlob((b) => resolve(b || blob), 'image/jpeg', 0.90);
+      previewCanvas.toBlob((b) => resolve(b || blob), 'image/png');
     });
 
     previewCanvas.width = 0;
@@ -211,11 +259,13 @@ export class PhotoEditor {
   }
 
   /**
-   * Tam çözünürlüklü, %100 kayıpsız veya en yüksek kaliteli dışa aktarma.
+   * Tam çözünürlüklü, 300 DPI onaylı ve EXIF korumalı dışa aktarma.
+   * Web Worker + OffscreenCanvas destekleniyorsa arayüzü dondurmadan arka planda çalıştırır.
    */
   public async exportHighRes(
     customFormat?: ExportFormat,
-    customQuality?: number
+    customQuality?: number,
+    onProgress?: (percent: number, message: string) => void
   ): Promise<{ blob: Blob; extension: string; mimeType: string }> {
     if (!this.originalImg) {
       throw new Error('İşlenecek görsel bulunamadı.');
@@ -224,6 +274,79 @@ export class PhotoEditor {
     const format = customFormat || this.settings.exportFormat;
     const quality = customQuality !== undefined ? customQuality : this.settings.exportQuality;
 
+    // 1. Web Worker & OffscreenCanvas ile arka planda çalıştır (Arayüz 0ms bile donmaz)
+    if (typeof Worker !== 'undefined' && typeof OffscreenCanvas !== 'undefined') {
+      try {
+        return await this.exportWithWebWorker(format, quality, onProgress);
+      } catch (workerError) {
+        console.warn('Web Worker banyosu başarısız oldu, ana iş parçacığına dönülüyor:', workerError);
+      }
+    }
+
+    // 2. Yedek: Ana iş parçacığında çalıştır (Fallback)
+    return this.exportOnMainThread(format, quality);
+  }
+
+  private async exportWithWebWorker(
+    format: ExportFormat,
+    quality: number,
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<{ blob: Blob; extension: string; mimeType: string }> {
+    if (!this.originalImg) throw new Error('Görsel bulunamadı.');
+
+    if (onProgress) onProgress(10, 'Görsel Web Worker belleğine aktarılıyor...');
+    const bitmap = await createImageBitmap(this.originalImg);
+
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(new URL('./export.worker.ts', import.meta.url), {
+        type: 'module'
+      });
+
+      worker.onmessage = (e: MessageEvent<any>) => {
+        const data = e.data;
+        if (data.type === 'progress') {
+          if (onProgress) onProgress(data.percent, data.message);
+        } else if (data.type === 'success') {
+          worker.terminate();
+          resolve({
+            blob: data.blob,
+            extension: data.extension,
+            mimeType: data.mimeType
+          });
+        } else if (data.type === 'error') {
+          worker.terminate();
+          reject(new Error(data.message));
+        }
+      };
+
+      worker.onerror = (err) => {
+        worker.terminate();
+        reject(err);
+      };
+
+      const payload = {
+        imageBitmap: bitmap,
+        settings: { ...this.settings },
+        rotation: this.rotation,
+        format,
+        quality,
+        originalMetadataSegments: this.originalMetadataSegments,
+        dpi: 300
+      };
+
+      // bitmap nesnesini transfer et (zero-copy memory transfer!)
+      worker.postMessage(payload, [bitmap]);
+    });
+  }
+
+  private async exportOnMainThread(
+    format: ExportFormat,
+    quality: number
+  ): Promise<{ blob: Blob; extension: string; mimeType: string }> {
+    if (!this.originalImg) {
+      throw new Error('İşlenecek görsel bulunamadı.');
+    }
+
     const isTransposed = this.rotation === 90 || this.rotation === 270;
     const targetWidth = isTransposed ? this.originalImg.naturalHeight : this.originalImg.naturalWidth;
     const targetHeight = isTransposed ? this.originalImg.naturalWidth : this.originalImg.naturalHeight;
@@ -231,11 +354,7 @@ export class PhotoEditor {
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = targetWidth;
     exportCanvas.height = targetHeight;
-    const exportCtx = exportCanvas.getContext('2d', { willReadFrequently: true });
-
-    if (!exportCtx) {
-      throw new Error('Dışa aktarım tuvali oluşturulamadı.');
-    }
+    const exportCtx = getOptimal2DContext(exportCanvas);
 
     const noisePattern = createNoisePattern(exportCtx);
     const target: RenderTarget = {
@@ -248,7 +367,7 @@ export class PhotoEditor {
     try {
       this.renderPipeline(target, this.originalImg, this.settings, this.rotation, noisePattern);
 
-      const blob = await new Promise<Blob>((resolve, reject) => {
+      let blob = await new Promise<Blob>((resolve, reject) => {
         exportCanvas.toBlob(
           (b) => {
             if (b) resolve(b);
@@ -258,6 +377,13 @@ export class PhotoEditor {
           quality
         );
       });
+
+      // 300 DPI ve Metaveri Enjeksiyonu
+      if (format === 'image/jpeg') {
+        blob = await inject300DpiAndExifToJpeg(blob, this.originalMetadataSegments, 300);
+      } else if (format === 'image/png') {
+        blob = await inject300DpiToPng(blob, 300);
+      }
 
       const extensionMap: Record<ExportFormat, string> = {
         'image/png': 'png',
@@ -271,7 +397,6 @@ export class PhotoEditor {
         mimeType: format
       };
     } finally {
-      // VRAM temizliği
       exportCanvas.width = 0;
       exportCanvas.height = 0;
     }
@@ -332,22 +457,22 @@ export class PhotoEditor {
       applyBleachBypass(target, settings.bleachBypass);
     }
 
-    // Black Pro-Mist (Yumuşak Sisli Parlama)
+    // Black Pro-Mist (Yumuşak Sisli Parlama & Gölge Koruması)
     if (settings.proMist > 0) {
       applyBlackProMist(target, settings.proMist);
     }
 
-    // Helios 44M Swirl Bokeh
+    // Helios 44M Swirl Bokeh (Kedi Gözü & Merkez Koruması)
     if (settings.swirl > 0) {
       applySwirlyBokeh(target, settings.swirl);
     }
 
-    // Chromatic Aberration
+    // Radyal Chromatic Aberration (Merkez Netliği Koruması)
     if (settings.chromatic > 0) {
       applyChromaticAberration(target, settings.chromatic);
     }
 
-    // CineStill 800T Halation
+    // CineStill 800T Çift Loblu Halasyon
     if (settings.preset === 'cinestill') {
       applyHalation(target);
     }
@@ -357,13 +482,13 @@ export class PhotoEditor {
       applyLightLeak(target, settings.lightLeak);
     }
 
-    // 35mm Analog Film Greni
+    // 35mm Analog Film Greni (Luminans-Uyarlamalı Çan Eğrisi)
     const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
     if (activeNoise > 0 && noisePattern) {
       applyFilmGrain(target, noisePattern, activeNoise);
     }
 
-    // Mekanik Vinyet
+    // Mekanik Vinyet (cos⁴ kanunu)
     if (settings.vignette > 0) {
       applyVignette(target, settings.vignette);
     }
@@ -435,6 +560,7 @@ export class PhotoEditor {
     this.cleanupUrls();
     this.originalImg = null;
     this.previewImg = null;
+    this.originalMetadataSegments = [];
     this.canvas.width = 0;
     this.canvas.height = 0;
   }

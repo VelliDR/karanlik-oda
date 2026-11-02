@@ -58,9 +58,12 @@ export interface EditorSnapshot {
   rotation: RotationDegree;
 }
 
+export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;
+export type AnyRenderingContext2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+
 export interface RenderTarget {
-  canvas: HTMLCanvasElement;
-  ctx: CanvasRenderingContext2D;
+  canvas: AnyCanvas;
+  ctx: AnyRenderingContext2D;
   width: number;
   height: number;
 }

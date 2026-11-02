@@ -40,6 +40,7 @@ const presetsContainer = document.getElementById('presets-container') as HTMLDiv
 const btnPwaInstall = document.getElementById('btn-pwa-install') as HTMLButtonElement;
 const saveBtnText = document.getElementById('save-btn-text') as HTMLSpanElement;
 const formatBadge = document.getElementById('format-badge') as HTMLSpanElement;
+const printDimensionsText = document.getElementById('print-dimensions-text') as HTMLSpanElement | null;
 
 // Quartz date controls
 const checkQuartzDate = document.getElementById('check-quartz-date') as HTMLInputElement;
@@ -230,14 +231,21 @@ function updateHistoryButtons(): void {
 
 function updateResolutionBadge(): void {
   const dims = editor.originalDimensions;
-  if (dims) {
-    const megapixels = ((dims.width * dims.height) / 1_000_000).toFixed(1);
-    resolutionBadge.innerText = `${dims.width} × ${dims.height} (${megapixels} MP)`;
+  const printDims = editor.printDimensions;
+  if (dims && printDims) {
+    resolutionBadge.innerText = `${dims.width} × ${dims.height} (${printDims.megapixels} MP) • 300 DPI`;
     resolutionBadge.classList.remove('hidden');
-    saveBtnText.innerText = `TAM ÇÖZÜNÜRLÜKTE KAYDET (${dims.width}×${dims.height})`;
+    saveBtnText.innerText = `300 DPI İLE KAYDET (${dims.width}×${dims.height})`;
+
+    if (printDimensionsText) {
+      printDimensionsText.innerText = `${printDims.widthCm} × ${printDims.heightCm} cm (${printDims.widthInches} × ${printDims.heightInches} in)`;
+    }
   } else {
     resolutionBadge.classList.add('hidden');
-    saveBtnText.innerText = 'TAM ÇÖZÜNÜRLÜKTE KAYDET (16MP+)';
+    saveBtnText.innerText = 'TAM ÇÖZÜNÜRLÜKTE KAYDET (300 DPI)';
+    if (printDimensionsText) {
+      printDimensionsText.innerText = 'Fotoğraf bekleniyor...';
+    }
   }
 }
 
@@ -482,35 +490,49 @@ btnCompare.addEventListener('touchstart', (e) => {
 btnCompare.addEventListener('touchend', stopComparing);
 btnCompare.addEventListener('touchcancel', stopComparing);
 
-// Save Full-Res Action
+// Save Full-Res Action (Web Worker + Screen Wake Lock Destekli)
 btnSave.addEventListener('click', async () => {
   if (!editor.hasImage) return;
 
   const originalContent = btnSave.innerHTML;
   btnSave.disabled = true;
-  btnSave.innerHTML = `<span>⏳ Tam Çözünürlükte İşleniyor...</span>`;
-  showToast('Tam çözünürlüklü banyo yapılıyor...', 'info', 2500);
+  btnSave.innerHTML = `<span>⏳ Hazırlanıyor...</span>`;
 
-  setTimeout(async () => {
+  // Uzun süreli banyoda mobil ekranın kapanmasını önle
+  let wakeLock: any = null;
+  if ('wakeLock' in navigator) {
     try {
-      const result = await editor.exportHighRes();
-      const url = URL.createObjectURL(result.blob);
-
-      const downloadLink = document.createElement('a');
-      downloadLink.download = `${currentOriginalFileName}_foton_${Date.now()}.${result.extension}`;
-      downloadLink.href = url;
-      downloadLink.click();
-
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-      showToast(`Görsel ${result.extension.toUpperCase()} olarak başarıyla kaydedildi!`, 'success', 3500);
-    } catch (err) {
-      console.error(err);
-      showToast('Görsel dışa aktarılırken hata oluştu.', 'error');
-    } finally {
-      btnSave.disabled = false;
-      btnSave.innerHTML = originalContent;
+      wakeLock = await (navigator as any).wakeLock.request('screen');
+    } catch {
+      // Wake Lock opsiyoneldir
     }
-  }, 60);
+  }
+
+  try {
+    const result = await editor.exportHighRes(undefined, undefined, (percent, message) => {
+      btnSave.innerHTML = `<span>⏳ Banyo: %${percent} (${message})</span>`;
+    });
+
+    const url = URL.createObjectURL(result.blob);
+    const downloadLink = document.createElement('a');
+    downloadLink.download = `${currentOriginalFileName}_foton_300dpi_${Date.now()}.${result.extension}`;
+    downloadLink.href = url;
+    downloadLink.click();
+
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    showToast(`Görsel 300 DPI (${result.extension.toUpperCase()}) kalitesinde başarıyla kaydedildi!`, 'success', 3500);
+  } catch (err) {
+    console.error(err);
+    showToast('Görsel dışa aktarılırken hata oluştu.', 'error');
+  } finally {
+    if (wakeLock) {
+      try {
+        await wakeLock.release();
+      } catch {}
+    }
+    btnSave.disabled = false;
+    btnSave.innerHTML = originalContent;
+  }
 });
 
 // Keyboard Shortcuts
@@ -562,6 +584,23 @@ btnPwaInstall.addEventListener('click', async () => {
   }
   deferredPrompt = null;
 });
+
+// PWA Masaüstü File Handling API (İşletim sisteminden "Birlikte Aç" / Çift tıklama desteği)
+if ('launchQueue' in window) {
+  (window as any).launchQueue.setConsumer(async (launchParams: any) => {
+    if (!launchParams.files || launchParams.files.length === 0) return;
+    try {
+      const fileHandle = launchParams.files[0];
+      const file = await fileHandle.getFile();
+      if (file) {
+        showToast(`Görsel açılıyor: ${file.name}`, 'info');
+        await handleFile(file);
+      }
+    } catch (e) {
+      console.warn('Dosya açma hatası:', e);
+    }
+  });
+}
 
 // Initialize
 setupDeckTabs();
