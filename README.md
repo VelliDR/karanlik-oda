@@ -1,48 +1,63 @@
 # 🧪 Foton: Karanlık Oda
 
-Tarayıcı üzerinde **%100 çevrimdışı (offline-first)** çalışan, analog film emülsiyonunu ve vintage lens karakteristiklerini simüle eden açık kaynaklı bir banyo istasyonudur.
+Modern web teknolojileri üzerinde çalışan; analog film emülsiyonlarını, vintage optik karakteristikleri ve fiziksel banyo kusurlarını yerel olarak simüle eden minimalist bir karanlık oda istasyonudur.
 
-Fotoğraflarınız cihazınızdan dışarı çıkmaz, uzak sunuculara yüklenmez veya analiz edilmez. Tüm işleme hattı yerel olarak **TypeScript, Canvas API, Web Worker ve PWA** mimarisi üzerinde yürütülür.
-
----
-
-## 🔬 Optik ve Kimyasal Modelleme
-
-* **🖨️ 300 DPI Arşivsel Baskı Standardı:** Dışa aktarılan PNG dosyalarına `pHYs` fiziksel piksel bloğu (11.811 px/m), JPEG dosyalarına ise 300 DPI JFIF başlığı mühürlenir. Çıktılar fine-art baskı stüdyolarında doğrudan doğru fiziksel boyutlarıyla tanınır.
-* **🛡️ Kayıpsız EXIF ve ICC Profil Koruması:** Kamera modeli, lens bilgisi, diyafram, enstantane, ISO ve renk profili gibi orijinal metaveriler işlenmiş JPEG çıktısına korunarak aktarılır.
-* **🌾 Luminans-Uyarlamalı Analog Gren:** Tekrarlayan dijital gürültü yerine Box-Muller Gauss dağılımı kullanılır. Gren yoğunluğu orta tonlarda (%18 gri, Zone V) doğal olarak belirginleşirken, derin gölgelerde ve patlamış beyazlarda sönümlenir.
-* **🎬 CineStill 800T Çift Loblu Halasyon:** Sinema filmlerinde rem-jet katmanının eksikliğinden doğan ışık sekmesini taklit eder. Işık çekirdeğinin beyazı korunurken, sınır hatlarında sıcak turuncu-kızıl kor ve dış kırmızı saçılma oluşturulur.
-* **🌀 Helios 44M Kedi Gözü (Cat-Eye) Swirl:** Biotar optik formülündeki mekanik pupil kesilmesini ve alan eğriliğini simüle eder. Merkezdeki odak alanı netliğini korurken, kenarlara doğru teğetsel eliptik astigmatizm uygulanır.
-* **🤖 3D Fiziksel Alan Derinliği (Depth Anything V2):** ONNX Runtime Web (WebGPU & Wasm SIMD) ile cihaz içinde yerel olarak 3D derinlik haritası üretir. Fotoğraf üzerinde istenen noktaya tıklanarak netlik düzlemi seçilebilir (Tap-to-Focus). Helios 44M girdabı yalnızca odak dışı derinlik katmanlarına uygulanır; netlikteki özne merkezde olmasa dahi kristal keskinliğini korur. Model isteğe bağlı (on-demand) indirilerek CacheStorage içinde çevrimdışı mühürlenir.
-* **⚡ Radyal Kromatik Sapma:** Optik merkezde netlik korunur; mercek kenarlarına doğru kademeli olarak artan prizmatik kırmızı ve mavi ayrışması simüle edilir.
-* **🌫️ Black Pro-Mist Difüzyonu:** Gölgelerdeki siyah seviyesini kilitleyerek soluklaşmayı önler; yalnızca orta ve yüksek ışık kaynaklarına yumuşak difüzyon uygular.
-* **🛡️ En-Boy Oranı Korumalı Ten Kalkanı:** Kolorimetrik analiz için görseli küçültürken en-boy oranını letterbox/unpad kalkanıyla korur. Gotik veya Leica Nordic gibi sert split-toning banyolarında insan ten tonunu maskeleyerek sıcak Portra tonlarını korur; önizleme ile tam çözünürlüklü dışa aktarma arasında 1 piksel bile kayma yapmaz.
-* **✨ Akıllı Reçete Asistanı (Fotometrik & Kolorimetrik AI):** Fotoğrafın Zone System luminans dağılımını, RMS dinamik kontrastını, renk sıcaklığını (Kelvin) ve insan ten oranını analiz eder. Gece sahnelerinde CineStill 800T, doğal portrelerde Kodak Portra, sert sokak kadrajlarında Moriyama S/B ve sisli soğuk manzaralarda Leica Nordic önerir; tek tıkla ince ayarlanmış analog reçeteyi uygular.
-* **🎨 Display P3 Geniş Renk Gamutu:** Destekleyen ekran ve cihazlarda (modern iPhone, Mac ve Android amiral gemileri) tuval P3 renk uzayında işlenerek renk kırpılmaları önlenir.
+Uzak sunuculara bağımlılığı yoktur. Görseller cihazdan dışarı aktarılmaz; tüm hesaplamalar **HTML5 Canvas, Web Worker, WebGPU / WASM SIMD ve PWA** mimarisi üzerinde, tamamen istemci tarafında (client-side) gerçekleştirilir.
 
 ---
 
-## ⚡ Performans ve PWA Mimarisi
+## 🎯 Temel Özellikler
 
-* **Arka Plan Banyo Motoru (Web Worker + OffscreenCanvas):** 16MP–48MP tam çözünürlüklü dışa aktarma işlemleri ana iş parçacığından koparılarak Web Worker üzerinde çalıştırılır. Arayüzde donma yaşanmaz, işlem adımları anlık olarak gösterilir.
-* **Screen Wake Lock API:** Yüksek çözünürlüklü banyo esnasında mobil cihaz ekranının kararması veya uyku moduna geçmesi önlenir.
-* **Masaüstü File Handling API:** PWA kurulduğunda işletim sistemiyle dosya ilişkilendirmesi sağlanır (`.jpg`, `.png`, `.webp`, `.heic` dosyaları "Birlikte Aç" veya çift tıklama ile doğrudan açılabilir).
-* **Apple HEIC / HEIF Desteği:** Güncel iPhone fotoğrafları tarayıcı içinde yerel olarak çözümlenir.
-* **Anlık Karşılaştırma & Geçmiş:** Düzenlemeleri orijinal ham fotoğrafla kıyaslama (`Boşluk` veya basılı tutma) ve çok adımlı geri/ileri alma (`Ctrl+Z`, `Ctrl+Y`).
+### 🎞️ Analog Emülsiyon ve Kimyasal Kusurlar
+* **Luminans-Uyarlamalı Gren:** Standart dijital parazit yerine Box-Muller Gaussian dağılımı kullanılır. Gren dokusu orta tonlarda (%18 gri, Zone V) belirginleşirken patlamış açık tonlarda ve derin gölgelerde doğal olarak sönümlenir.
+* **CineStill 800T Halasyon:** Sinema filmlerindeki rem-jet katmanı eksikliğinden doğan ışık sekmesini taklit eder. Yüksek parlaklıktaki ışık kaynaklarının etrafında kırmızı-turuncu kor ve sıcak saçılma oluşturur.
+* **Bleach Bypass (Gümüş Koruma):** Renkli banyo sürecinde ağartma adımının atlanmasıyla gümüşün emülsiyonda kalmasını sağlar; kontrastı artırır, renk doygunluğunu düşürür.
+* **Işık Sızıntısı & Quartz Date:** Fotoğraf makinesinin arka kapağından sızan ışık yanmaları ve 90'lar analog kompakt kameraların turuncu LED tarih damgası mühürlenebilir.
+
+### 🔍 Vintage Optik Modelleme
+* **Helios 44M-4 Kedi Gözü (Cat-Eye) Swirl:** Klasik Biotar formülündeki mekanik diyafram kesilmesini simüle eder. Merkez netliği korunurken kenarlara doğru teğetsel eliptik astigmatizm ve dönen bokeh üretilir.
+* **Radyal Kromatik Sapma:** Optik merkez ekseninde keskinlik korunur; kenarlara doğru prizmatik kırmızı ve mavi dalga boyu ayrışması kademeli olarak artar.
+* **Black Pro-Mist Difüzyonu:** Derin siyah seviyelerini koruyarak orta ve yüksek parlaklıktaki ışık alanlarına yumuşak haleli yayılım sağlar.
+* **Mekanik Vinyet:** $cos^4(\theta)$ optik aydınlatma düşüşü kuralına uygun yumuşak kenar kararması.
+
+### 🤖 Cihaz İçi (On-Device) AI
+* **3D Fiziksel Alan Derinliği (Depth Anything V2):** ONNX Runtime Web (WebGPU & WASM SIMD) aracılığıyla istemci tarafında çalışır. Ekrana dokunarak odak düzlemi seçilebilir (Tap-to-Focus). Helios bokeh etkisi yalnızca odak dışı derinlik katmanlarına uygulanır; netlikteki özne merkezde olmasa dahi keskinliğini korur. Model yalnızca istendiğinde (~26 MB) indirilip `CacheStorage` içinde çevrimdışı önbelleğe alınır.
+* **En-Boy Oranı Koruma Kalkanı (Aspect Shield):** Görseli nöral ağ boyutuna çekerken en-boy oranını letterbox/unpad mimarisiyle sub-piksel seviyesinde korur. Önizleme ile 48 MP tam çözünürlüklü dışa aktarma arasında piksel kayması yaşanmaz.
+* **Ten Koruma Kalkanı:** İnsan ten pigmentlerini $YC_bC_r$ kromatik düzleminde filtreler. Soğuk filtre veya sert tonlamalarda insan ten tonlarının doğallığını korur.
+* **Akıllı Reçete Asistanı:** Fotoğrafın Zone System ışık dağılımını, dinamik kontrastını, renk sıcaklığını (Kelvin) ve derinlik ayrımını analiz ederek en uygun analog film reçetesini ve optik ayarları önerir.
+
+### 🖨️ 300 DPI Arşivsel Baskı Standartları
+* **Kayıpsız 300 DPI Mühürleme:** PNG çıktılara `pHYs` fiziksel piksel bloğu (11.811 px/m), JPEG çıktılara ise JFIF 300 DPI başlığı enjekte edilir. Fine-art baskı merkezlerinde doğrudan fiziksel ölçüleriyle (cm/inç) algılanır.
+* **EXIF ve Renk Profili Korunumu:** Orijinal kameraya ait diyafram, enstantane, ISO, lens ve ICC profili segmentleri ayıklanarak dışa aktarılan dosyaya korunarak aktarılır.
+* **Display P3 Desteği:** Geniş renk gamutu destekleyen ekranlarda (Apple Display P3) renk kırpılmaları önlenerek geniş dinamik aralık korunur.
+
+---
+
+## ⚡ Mimari ve Performans
+
+* **Web Worker Banyo Hattı:** Yüksek çözünürlüklü (16–48 MP) dışa aktarma işlemleri arka plan iş parçacığı ve `OffscreenCanvas` üzerinde yürütülür; ana arayüz hiçbir zaman donmaz.
+* **Screen Wake Lock API:** Mobil cihazlarda uzun banyo süreçlerinde ekranın kapanması engellenir.
+* **Masaüstü File Handling API:** Kurulum yapıldığında işletim sisteminde `.jpg`, `.png`, `.webp`, `.heic` dosyaları "Birlikte Aç" ile doğrudan uygulamaya yönlendirilebilir.
+* **Apple HEIC / HEIF Dönüştürücü:** Güncel iPhone formatları tarayıcı içinde kayıpsız olarak işlenir.
 
 ---
 
 ## 🛠️ Teknoloji Yığını
 
-* **Paketleyici:** [Vite](https://vitejs.dev/)
-* **Dil:** [TypeScript](https://www.typescriptlang.org/) (Strict Mode)
-* **Arayüz & Stil:** [Tailwind CSS v4](https://tailwindcss.com/)
-* **PWA:** [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) (Workbox çevrimdışı önbellek)
-* **İşlem Motoru:** HTML5 Canvas, OffscreenCanvas ve Web Worker
+| Bileşen | Teknoloji | Açıklama |
+| :--- | :--- | :--- |
+| **Paketleyici** | [Vite 8](https://vitejs.dev/) | Hızlı HMR ve optimize üretim derlemesi |
+| **Dil** | [TypeScript](https://www.typescriptlang.org/) | Tip güvenli çekirdek mimari (Strict Mode) |
+| **Arayüz** | [Tailwind CSS v4](https://tailwindcss.com/) | Modern, koyu kırmızı karanlık oda teması |
+| **PWA** | [vite-plugin-pwa](https://vite-pwa-org.netlify.app/) | Service Worker ve Workbox çevrimdışı önbellek |
+| **AI Çalıştırıcı** | [ONNX Runtime Web](https://onnxruntime.ai/) | WebGPU donanım hızlandırma ve WASM SIMD yedek |
+| **Görsel Çekirdek** | Canvas API & OffscreenCanvas | Sıfır kopyalı bellek transferi ve sub-piksel projeksiyon |
 
 ---
 
-## 💻 Kurulum ve Geliştirme
+## 💻 Kurulum ve Çalıştırma
+
+Projeyi yerel makinenizde derlemek ve çalıştırmak için:
 
 ```bash
 # Bağımlılıkları yükleyin
@@ -51,7 +66,7 @@ npm install
 # Geliştirme sunucusunu başlatın
 npm run dev
 
-# Üretim derlemesi alın
+# Üretim sürümünü derleyin
 npm run build
 
 # Üretim çıktısını yerel olarak önizleyin
@@ -60,14 +75,14 @@ npm run preview
 
 ---
 
-## 📱 Kurulum (PWA)
+## 📱 PWA Kurulumu
 
-1. Uygulamayı modern bir mobil veya masaüstü tarayıcıda açın.
-2. Sağ üstteki **"Yükle"** butonuna tıklayın (veya tarayıcı menüsünden "Ana Ekrana Ekle"yi seçin).
-3. İnternet bağlantısı olmadan bağımsız bir masaüstü/mobil uygulama gibi kullanın.
+1. Desteklenen bir mobil veya masaüstü tarayıcıda (Chrome, Edge, Safari vb.) açın.
+2. Adres çubuğundaki veya araç çubuğundaki **Yükle / Uygulamayı Yükle** butonuna tıklayın (veya tarayıcı menüsünden *Ana Ekrana Ekle* seçeneğini kullanın).
+3. İnternet bağlantısı olmaksızın bağımsız bir yerel masaüstü veya mobil uygulama gibi kullanın.
 
 ---
 
 ## 📄 Lisans
 
-Bu proje [MIT Lisansı](LICENSE) ile korunmaktadır.
+Bu proje [MIT Lisansı](LICENSE) kapsamında açık kaynak olarak yayımlanmıştır.
