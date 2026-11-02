@@ -222,10 +222,16 @@ export function analyzeAndRecommendRecipe(
         'Koyu gölgeler içinde noktasal yapay ışık kaynakları saptandı. Rem-jet katmanı eksikliğinden doğan sıcak kızıl halasyon saçılması ve sinematik gece atmosferi için CineStill 800T reçetesi öneriliyor.',
       sliderTweaks: {
         preset: 'cinestill',
+        exposure: 0,
+        contrast: 5,
+        saturation: 10,
         warmth: 8,
+        bleachBypass: 0,
+        lightLeak: 0,
         swirl: f.hasStrongDepthSeparation ? 35 : 15,
         proMist: 32,
         grain: 28,
+        chromatic: 10,
         vignette: 24,
         skinProtection: f.skinRatio > 0.02 ? 50 : 0
       }
@@ -249,11 +255,17 @@ export function analyzeAndRecommendRecipe(
         'Fotoğrafta insan ten pigmentleri ve odaklanmış özne dengesi tespit edildi. Ten tonlarını kadifemsi yumuşaklıkta korumak ve 35mm klasik sıcaklık katmak için Kodak Portra 400 reçetesi tavsiye ediliyor.',
       sliderTweaks: {
         preset: 'analog',
+        exposure: 2,
+        contrast: 0,
+        saturation: 0,
         warmth: 12,
+        bleachBypass: 0,
+        lightLeak: 0,
         skinProtection: 70,
         swirl: f.hasStrongDepthSeparation ? 40 : 20,
         proMist: 22,
         grain: 16,
+        chromatic: 0,
         vignette: 14
       }
     };
@@ -276,10 +288,17 @@ export function analyzeAndRecommendRecipe(
         'Yüksek kontrast aralığı ve grafiksel gölge formları analiz edildi. Daido Moriyama tarzı dramatik sokak estetiği, derin gümüş siyahları ve keskin analog gren dokusu için Moriyama S/B reçetesi öneriliyor.',
       sliderTweaks: {
         preset: 'sb',
+        exposure: -2,
         contrast: 15,
+        saturation: 0,
+        warmth: 0,
+        bleachBypass: 0,
+        lightLeak: 0,
+        skinProtection: 0,
         grain: 42,
         vignette: 28,
         swirl: 15,
+        proMist: 0,
         chromatic: 20
       }
     };
@@ -302,11 +321,17 @@ export function analyzeAndRecommendRecipe(
         'Düşük renk doygunluğu ve serin gölge tonlaması saptandı. İskandinav laciverti derin gölgeler, saf beyazlar ve dingin melankoli için Leica Nordic reçetesi öneriliyor.',
       sliderTweaks: {
         preset: 'nordic',
+        exposure: 0,
+        contrast: 5,
+        saturation: -5,
         warmth: -10,
         bleachBypass: 14,
+        lightLeak: 0,
         grain: 16,
         proMist: 18,
         vignette: 16,
+        swirl: 15,
+        chromatic: 0,
         skinProtection: 40
       }
     };
@@ -330,10 +355,16 @@ export function analyzeAndRecommendRecipe(
       sliderTweaks: {
         preset: 'reze',
         exposure: 4,
+        contrast: -5,
+        saturation: 5,
         warmth: 6,
+        bleachBypass: 0,
+        lightLeak: 0,
         proMist: 28,
         grain: 12,
         skinProtection: 55,
+        swirl: 20,
+        chromatic: 0,
         vignette: 8
       }
     };
@@ -356,10 +387,17 @@ export function analyzeAndRecommendRecipe(
         'Koyu ton yoğunluğu ve solgun renk yapısı analiz edildi. Ağır gümüş tutma hissi ve dondurucu siyahlar oluşturmak için Gotik banyo öneriliyor.',
       sliderTweaks: {
         preset: 'gotik',
+        exposure: -3,
         contrast: 12,
+        saturation: -15,
+        warmth: -8,
         bleachBypass: 22,
+        lightLeak: 0,
         grain: 24,
+        proMist: 15,
         vignette: 32,
+        swirl: 10,
+        chromatic: 15,
         skinProtection: 30
       }
     };
@@ -380,10 +418,16 @@ export function analyzeAndRecommendRecipe(
       'Dengeli orta ton dağılımı ve doğal ışık yapısı belirlendi. Fotoğrafın dijital katılığını kırıp nostaljik 35mm film sıcaklığı kazandırmak için Kodak Portra reçetesi tavsiye ediliyor.',
     sliderTweaks: {
       preset: 'analog',
+      exposure: 0,
+      contrast: 0,
+      saturation: 0,
       warmth: 8,
+      bleachBypass: 0,
+      lightLeak: 0,
       grain: 20,
       swirl: 25,
       proMist: 18,
+      chromatic: 0,
       vignette: 15,
       skinProtection: 50
     }

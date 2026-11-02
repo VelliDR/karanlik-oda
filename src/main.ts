@@ -338,9 +338,15 @@ async function handleFile(file: File): Promise<void> {
     syncAllControlsUI();
     enableEditorUI();
 
-    // Akıllı Reçete durumunu sıfırla
+    // Akıllı Reçete ve Derinlik arayüz durumunu sıfırla
     currentSmartSuggestion = null;
     smartRecipeResult.classList.add('hidden');
+    depthProgressContainer.classList.add('hidden');
+    depthControls.classList.add('hidden');
+    depthStatusBadge.innerText = 'KAPALI';
+    depthStatusBadge.className =
+      'text-[8px] font-mono px-1.5 py-0.5 rounded bg-white/10 text-white/60';
+    btnToggleDepthMap.classList.remove('bg-amber-500/30', 'text-amber-300', 'border-amber-400');
 
     showToast('Fotoğraf banyo istasyonuna alındı.', 'success');
   } catch (err) {
@@ -482,6 +488,8 @@ checkAiDepth.addEventListener('change', async () => {
     }
   } else {
     editor.setAiDepthEnabled(false);
+    editor.setAiShowDepthMap(false);
+    btnToggleDepthMap.classList.remove('bg-amber-500/30', 'text-amber-300', 'border-amber-400');
     depthControls.classList.add('hidden');
     depthStatusBadge.innerText = 'KAPALI';
     depthStatusBadge.className =
@@ -493,6 +501,10 @@ checkAiDepth.addEventListener('change', async () => {
 });
 
 btnToggleDepthMap.addEventListener('click', () => {
+  if (!editor.hasDepthMap) {
+    showToast('Önce 3D Alan Derinliğini aktif etmelisiniz.', 'info', 2500);
+    return;
+  }
   const show = !editor.settings.aiShowDepthMap;
   editor.setAiShowDepthMap(show);
   if (show) {
@@ -522,10 +534,11 @@ canvas.addEventListener('click', (e: MouseEvent) => {
   focalDepthBadge.innerText = `Odak: %${depthPercent} (${regionName})`;
   showToast(`🎯 Odak Noktası Belirlendi: %${depthPercent} (${regionName})`, 'info', 1800);
 
-  // Görsel odak halkası animasyonu
+  // Görsel odak halkası animasyonu (büyüteç katsayısına göre sub-piksel hizalanır)
   const wrapperRect = canvasWrapper.getBoundingClientRect();
-  focusIndicator.style.left = `${e.clientX - wrapperRect.left}px`;
-  focusIndicator.style.top = `${e.clientY - wrapperRect.top}px`;
+  const zoomScale = isZoomedIn ? 2.0 : 1.0;
+  focusIndicator.style.left = `${(e.clientX - wrapperRect.left) / zoomScale}px`;
+  focusIndicator.style.top = `${(e.clientY - wrapperRect.top) / zoomScale}px`;
   focusIndicator.classList.remove('hidden');
 
   setTimeout(() => {
@@ -581,6 +594,7 @@ btnRandomize.addEventListener('click', () => {
   editor.settings = {
     ...editor.settings,
     preset: randomPreset,
+    aiShowDepthMap: false,
     exposure: Math.floor(Math.random() * 25) - 10,
     contrast: Math.floor(Math.random() * 30) - 10,
     saturation: Math.floor(Math.random() * 30) - 15,
@@ -593,6 +607,9 @@ btnRandomize.addEventListener('click', () => {
     chromatic: Math.random() > 0.5 ? Math.floor(Math.random() * 30) : 0,
     vignette: Math.floor(Math.random() * 45) + 10
   };
+
+  currentSmartSuggestion = null;
+  smartRecipeResult.classList.add('hidden');
 
   syncAllControlsUI();
   editor.scheduleRender();
@@ -630,6 +647,8 @@ btnRotate.addEventListener('click', () => {
 // Reset Action
 btnReset.addEventListener('click', () => {
   editor.resetSettings();
+  currentSmartSuggestion = null;
+  smartRecipeResult.classList.add('hidden');
   syncAllControlsUI();
   editor.scheduleRender();
   history.push(editor.getSnapshot());

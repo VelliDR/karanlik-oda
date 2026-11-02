@@ -31,6 +31,7 @@ export interface WorkerExportPayload {
   quality: number;
   originalMetadataSegments: Uint8Array[];
   dpi: number;
+  depthBitmap?: ImageBitmap | null;
   rawDepth?: Float32Array | null;
   depthRoi?: AspectROI | null;
 }
@@ -49,6 +50,7 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     quality,
     originalMetadataSegments,
     dpi = 300,
+    depthBitmap,
     rawDepth,
     depthRoi
   } = e.data;
@@ -88,7 +90,7 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     } as WorkerMessageToMain);
 
     // Çekirdek pipeline'ı çalıştır
-    renderPipelineInWorker(target, imageBitmap, settings, rotation, noisePattern, rawDepth, depthRoi);
+    renderPipelineInWorker(target, imageBitmap, settings, rotation, noisePattern, depthBitmap, rawDepth, depthRoi);
 
     self.postMessage({
       type: 'progress',
@@ -131,6 +133,11 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     } as WorkerMessageToMain);
   } finally {
     imageBitmap.close();
+    if (depthBitmap) {
+      try {
+        depthBitmap.close();
+      } catch {}
+    }
   }
 };
 
@@ -140,6 +147,7 @@ function renderPipelineInWorker(
   settings: SliderSettings,
   rotation: RotationDegree,
   noisePattern: CanvasPattern | null,
+  depthBitmap?: ImageBitmap | null,
   rawDepth?: Float32Array | null,
   depthRoi?: AspectROI | null
 ): void {
@@ -228,8 +236,18 @@ function renderPipelineInWorker(
   // Helios 44M Swirl Bokeh (Kedi Gözü & 3D Derinlik Kalkanı)
   if (settings.swirl > 0) {
     let fullDepthCanvas: AnyCanvas | null = null;
-    if (settings.aiDepthEnabled && rawDepth && depthRoi) {
-      fullDepthCanvas = projectDepthMapFromRaw(rawDepth, depthRoi, w, h);
+    if (settings.aiDepthEnabled) {
+      if (depthBitmap) {
+        fullDepthCanvas = new OffscreenCanvas(w, h);
+        const dCtx = fullDepthCanvas.getContext('2d');
+        if (dCtx) {
+          dCtx.imageSmoothingEnabled = true;
+          dCtx.imageSmoothingQuality = 'high';
+          dCtx.drawImage(depthBitmap, 0, 0, w, h);
+        }
+      } else if (rawDepth && depthRoi) {
+        fullDepthCanvas = projectDepthMapFromRaw(rawDepth, depthRoi, w, h);
+      }
     }
     applySwirlyBokeh(
       target,

@@ -148,6 +148,7 @@ export class PhotoEditor {
    */
   public async loadImageFromBlob(blob: Blob): Promise<void> {
     this.cleanupUrls();
+    this.cleanupDepth();
 
     // 1. Orijinal dosyanın EXIF ve ICC profil segmentlerini koruma için çıkar
     try {
@@ -217,7 +218,27 @@ export class PhotoEditor {
   public rotateClockwise(): void {
     if (!this.hasImage) return;
     this.rotation = ((this.rotation + 90) % 360) as RotationDegree;
+    this.rotateDepthCanvasClockwise();
     this.scheduleRender();
+  }
+
+  private rotateDepthCanvasClockwise(): void {
+    if (!this.depthCanvas) return;
+    const oldW = this.depthCanvas.width;
+    const oldH = this.depthCanvas.height;
+    if (oldW <= 0 || oldH <= 0) return;
+
+    const newCanvas = createCompatibleCanvas(oldH, oldW);
+    const nCtx = newCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!nCtx) return;
+
+    nCtx.translate(oldH / 2, oldW / 2);
+    nCtx.rotate(Math.PI / 2);
+    nCtx.drawImage(this.depthCanvas as CanvasImageSource, -oldW / 2, -oldH / 2);
+
+    this.depthCanvas.width = 0;
+    this.depthCanvas.height = 0;
+    this.depthCanvas = newCanvas;
   }
 
   public setComparing(comparing: boolean): void {
@@ -234,8 +255,17 @@ export class PhotoEditor {
   }
 
   public applySnapshot(snapshot: EditorSnapshot): void {
+    const rotationDelta = ((snapshot.rotation - this.rotation + 360) % 360) as RotationDegree;
     this.settings = { ...snapshot.settings };
     this.rotation = snapshot.rotation;
+
+    if (this.depthCanvas && rotationDelta !== 0) {
+      const turns = rotationDelta / 90;
+      for (let i = 0; i < turns; i++) {
+        this.rotateDepthCanvasClockwise();
+      }
+    }
+
     this.scheduleRender();
   }
 
@@ -420,7 +450,8 @@ export class PhotoEditor {
   public applySmartRecipe(suggestion: SmartRecipeSuggestion): void {
     this.settings = {
       ...this.settings,
-      ...suggestion.sliderTweaks
+      ...suggestion.sliderTweaks,
+      aiShowDepthMap: false
     };
     this.scheduleRender();
   }
@@ -506,6 +537,9 @@ export class PhotoEditor {
 
     if (onProgress) onProgress(10, 'Görsel Web Worker belleğine aktarılıyor...');
     const bitmap = await createImageBitmap(this.originalImg);
+    const depthBitmap = this.depthCanvas
+      ? await createImageBitmap(this.depthCanvas as CanvasImageSource)
+      : null;
 
     return new Promise((resolve, reject) => {
       const worker = new Worker(new URL('./export.worker.ts', import.meta.url), {
@@ -536,18 +570,23 @@ export class PhotoEditor {
 
       const payload = {
         imageBitmap: bitmap,
-        settings: { ...this.settings },
+        settings: { ...this.settings, aiShowDepthMap: false },
         rotation: this.rotation,
         format,
         quality,
         originalMetadataSegments: this.originalMetadataSegments,
         dpi: 300,
+        depthBitmap,
         rawDepth: this.depthRaw ? this.depthRaw.slice(0) : null,
         depthRoi: this.depthRoi
       };
 
-      // bitmap nesnesini transfer et (zero-copy memory transfer!)
-      worker.postMessage(payload, [bitmap]);
+      // bitmap ve derinlik bitmap nesnelerini transfer et (zero-copy memory transfer!)
+      const transferList: Transferable[] = [bitmap];
+      if (depthBitmap) {
+        transferList.push(depthBitmap);
+      }
+      worker.postMessage(payload, transferList);
     });
   }
 
@@ -576,8 +615,13 @@ export class PhotoEditor {
       height: targetHeight
     };
 
+    const exportSettings: SliderSettings = {
+      ...this.settings,
+      aiShowDepthMap: false
+    };
+
     try {
-      this.renderPipeline(target, this.originalImg, this.settings, this.rotation, noisePattern);
+      this.renderPipeline(target, this.originalImg, exportSettings, this.rotation, noisePattern);
 
       let blob = await new Promise<Blob>((resolve, reject) => {
         exportCanvas.toBlob(
