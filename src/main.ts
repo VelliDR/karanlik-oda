@@ -6,6 +6,7 @@ import { convertHeicToLossless, isHeicFile } from './core/heic-loader';
 import { ICONS } from './ui/icons';
 import { showToast } from './ui/toast';
 import { ExportFormat, FilmBorder, PresetKey, SliderSettings } from './core/types';
+import { SmartRecipeSuggestion } from './core/smart-recipe';
 
 // Register PWA service worker with auto-update
 registerSW({
@@ -92,6 +93,17 @@ const depthControls = document.getElementById('depth-controls') as HTMLElement;
 const btnToggleDepthMap = document.getElementById('btn-toggle-depthmap') as HTMLButtonElement;
 const focalDepthBadge = document.getElementById('focal-depth-badge') as HTMLElement;
 const focusIndicator = document.getElementById('focus-indicator') as HTMLElement;
+
+// ✨ Akıllı Reçete AI Elemanları
+const btnSmartRecipeAnalyze = document.getElementById('btn-smart-recipe-analyze') as HTMLButtonElement;
+const smartRecipeResult = document.getElementById('smart-recipe-result') as HTMLElement;
+const recipeSceneBadge = document.getElementById('recipe-scene-badge') as HTMLElement;
+const recipeConfidenceBadge = document.getElementById('recipe-confidence-badge') as HTMLElement;
+const recipeTempText = document.getElementById('recipe-temp-text') as HTMLElement;
+const recipeLightText = document.getElementById('recipe-light-text') as HTMLElement;
+const recipeExplanationText = document.getElementById('recipe-explanation-text') as HTMLElement;
+const btnSmartRecipeApply = document.getElementById('btn-smart-recipe-apply') as HTMLButtonElement;
+let currentSmartSuggestion: SmartRecipeSuggestion | null = null;
 
 // Initialize Core Engine
 const editor = new PhotoEditor(canvas);
@@ -325,6 +337,11 @@ async function handleFile(file: File): Promise<void> {
     history.reset(editor.getSnapshot());
     syncAllControlsUI();
     enableEditorUI();
+
+    // Akıllı Reçete durumunu sıfırla
+    currentSmartSuggestion = null;
+    smartRecipeResult.classList.add('hidden');
+
     showToast('Fotoğraf banyo istasyonuna alındı.', 'success');
   } catch (err) {
     console.error(err);
@@ -517,6 +534,41 @@ canvas.addEventListener('click', (e: MouseEvent) => {
 
   history.push(editor.getSnapshot());
   updateHistoryButtons();
+});
+
+// ✨ Akıllı Reçete AI Dinleyicileri
+btnSmartRecipeAnalyze.addEventListener('click', () => {
+  if (!editor.hasImage) {
+    showToast('Lütfen önce banyo edilecek bir fotoğraf yükleyin.', 'error', 3000);
+    return;
+  }
+
+  showToast('🔍 Sahne analizi yapılıyor...', 'info', 1000);
+  const suggestion = editor.getSmartRecipeSuggestion();
+  if (!suggestion) {
+    showToast('Sahne analiz edilemedi.', 'error', 3000);
+    return;
+  }
+
+  currentSmartSuggestion = suggestion;
+  recipeSceneBadge.innerText = `${suggestion.badge} • ${suggestion.sceneTitle}`;
+  recipeConfidenceBadge.innerText = `%${suggestion.confidencePercent} Eşleşme`;
+  recipeTempText.innerText = suggestion.colorTempName;
+  recipeLightText.innerText = suggestion.lightingCondition;
+  recipeExplanationText.innerText = suggestion.explanation;
+
+  smartRecipeResult.classList.remove('hidden');
+  showToast(`✨ Sahne tespit edildi: ${suggestion.sceneTitle}`, 'info', 2500);
+});
+
+btnSmartRecipeApply.addEventListener('click', () => {
+  if (!currentSmartSuggestion) return;
+
+  editor.applySmartRecipe(currentSmartSuggestion);
+  syncAllControlsUI();
+  history.push(editor.getSnapshot());
+  updateHistoryButtons();
+  showToast(`✨ ${currentSmartSuggestion.presetName} Reçetesi ve Optik Ayarları Uygulandı!`, 'info', 3000);
 });
 
 // 🎲 Kör Makara (Analog Serendipity / Rastgele Banyo)

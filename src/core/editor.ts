@@ -34,6 +34,7 @@ import {
   inject300DpiToPng,
   PrintDimensions
 } from './metadata';
+import { analyzeAndRecommendRecipe, SmartRecipeSuggestion } from './smart-recipe';
 
 export const DEFAULT_SETTINGS: SliderSettings = {
   exposure: 0,
@@ -379,6 +380,49 @@ export class PhotoEditor {
   public setAiShowDepthMap(show: boolean): void {
     this.settings.aiShowDepthMap = show;
     this.render();
+  }
+
+  /**
+   * 🤖 Fotoğrafın ışık, kontrast, renk sıcaklığı ve ten pigmentlerini analiz ederek
+   * en uygun analog film reçetesini ve ince slider ayarlarını önerir.
+   */
+  public getSmartRecipeSuggestion(): SmartRecipeSuggestion | null {
+    if (!this.previewImg && !this.originalImg) return null;
+
+    const sourceImg = this.previewImg || this.originalImg!;
+    const isTransposed = this.rotation === 90 || this.rotation === 270;
+    const w = isTransposed ? sourceImg.naturalHeight : sourceImg.naturalWidth;
+    const h = isTransposed ? sourceImg.naturalWidth : sourceImg.naturalHeight;
+
+    const sourceCanvas = createCompatibleCanvas(w, h);
+    const sCtx = sourceCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!sCtx) return null;
+
+    if (this.rotation !== 0) {
+      sCtx.translate(w / 2, h / 2);
+      sCtx.rotate((this.rotation * Math.PI) / 180);
+      sCtx.drawImage(
+        sourceImg,
+        -sourceImg.naturalWidth / 2,
+        -sourceImg.naturalHeight / 2
+      );
+    } else {
+      sCtx.drawImage(sourceImg, 0, 0);
+    }
+
+    const suggestion = analyzeAndRecommendRecipe(sourceCanvas, w, h, this.depthCanvas);
+    sourceCanvas.width = 0;
+    sourceCanvas.height = 0;
+
+    return suggestion;
+  }
+
+  public applySmartRecipe(suggestion: SmartRecipeSuggestion): void {
+    this.settings = {
+      ...this.settings,
+      ...suggestion.sliderTweaks
+    };
+    this.scheduleRender();
   }
 
   public scheduleRender(): void {

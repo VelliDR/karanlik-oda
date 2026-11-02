@@ -17,6 +17,7 @@ Fotoğraflarınız cihazınızdan dışarı çıkmaz, uzak sunuculara yüklenmez
 * **⚡ Radyal Kromatik Sapma:** Optik merkezde netlik korunur; mercek kenarlarına doğru kademeli olarak artan prizmatik kırmızı ve mavi ayrışması simüle edilir.
 * **🌫️ Black Pro-Mist Difüzyonu:** Gölgelerdeki siyah seviyesini kilitleyerek soluklaşmayı önler; yalnızca orta ve yüksek ışık kaynaklarına yumuşak difüzyon uygular.
 * **🛡️ En-Boy Oranı Korumalı Ten Kalkanı:** Kolorimetrik analiz için görseli küçültürken en-boy oranını letterbox/unpad kalkanıyla korur. Gotik veya Leica Nordic gibi sert split-toning banyolarında insan ten tonunu maskeleyerek sıcak Portra tonlarını korur; önizleme ile tam çözünürlüklü dışa aktarma arasında 1 piksel bile kayma yapmaz.
+* **✨ Akıllı Reçete Asistanı (Fotometrik & Kolorimetrik AI):** Fotoğrafın Zone System luminans dağılımını, RMS dinamik kontrastını, renk sıcaklığını (Kelvin) ve insan ten oranını analiz eder. Gece sahnelerinde CineStill 800T, doğal portrelerde Kodak Portra, sert sokak kadrajlarında Moriyama S/B ve sisli soğuk manzaralarda Leica Nordic önerir; tek tıkla ince ayarlanmış analog reçeteyi uygular.
 * **🎨 Display P3 Geniş Renk Gamutu:** Destekleyen ekran ve cihazlarda (modern iPhone, Mac ve Android amiral gemileri) tuval P3 renk uzayında işlenerek renk kırpılmaları önlenir.
 
 ---

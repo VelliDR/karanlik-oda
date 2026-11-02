@@ -137,6 +137,44 @@
 
       <!-- TAB 1: BANYO (Presets & Basic Tone) -->
       <div id="tab-banyo" class="deck-panel space-y-3">
+        <!-- 🤖 AKILLI REÇETE AI ASİSTANI -->
+        <div class="bg-gradient-to-br from-m3-surface to-m3-surface-container p-3 rounded-2xl border border-amber-500/30 space-y-2.5 shadow-lg">
+          <div class="flex justify-between items-center">
+            <span class="text-[9px] text-amber-300 font-mono tracking-wider font-bold flex items-center gap-1.5">
+              <span>✨</span> AKILLI REÇETE ASİSTANI (AI)
+            </span>
+            <button id="btn-smart-recipe-analyze" class="px-2.5 py-1 text-[9px] font-mono font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg cursor-pointer transition-all active:scale-95 flex items-center gap-1">
+              <span>🔍</span> Analiz Et
+            </button>
+          </div>
+
+          <!-- Analiz Kartı (Sonuç çıktığında görünür) -->
+          <div id="smart-recipe-result" class="hidden space-y-2 bg-black/40 p-2.5 rounded-xl border border-white/10">
+            <div class="flex items-center justify-between text-[9px] font-mono">
+              <span id="recipe-scene-badge" class="font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
+                🎬 Gece & Neon
+              </span>
+              <span id="recipe-confidence-badge" class="text-white/60">
+                %92 Eşleşme
+              </span>
+            </div>
+
+            <div class="flex gap-2 text-[8px] font-mono text-white/50">
+              <span id="recipe-temp-text">3200K Tungsten</span>
+              <span>•</span>
+              <span id="recipe-light-text">Noktasal Işıklar</span>
+            </div>
+
+            <p id="recipe-explanation-text" class="text-[9px] text-white/80 font-mono leading-relaxed border-t border-white/5 pt-1.5">
+              Işık ve histogram analizi bekleniyor...
+            </p>
+
+            <button id="btn-smart-recipe-apply" class="w-full py-1.5 px-3 text-[10px] font-mono font-bold bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5">
+              <span>🧪</span> REÇETEYİ VE OPTİK AYARLARI UYGULA
+            </button>
+          </div>
+        </div>
+
         <!-- Banyo Reçeteleri -->
         <div class="bg-m3-surface p-3 rounded-2xl border border-m3-border space-y-2">
           <div class="flex justify-between items-center">
