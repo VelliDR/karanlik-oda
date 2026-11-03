@@ -16,6 +16,7 @@ export interface PhotoFeatures {
   redBias: number;                  // 0.0 - 1.0 (Kırmızı spektrum ağırlığı)
   greenBias: number;                // 0.0 - 1.0 (Yeşil spektrum ağırlığı)
   blueBias: number;                 // 0.0 - 1.0 (Mavi spektrum ağırlığı)
+  vegetationIndex: number;          // -1.0 to 1.0 (Bitki örtüsü klorofil indeksi: (G - R) / (G + R))
   centerLuminanceRatio: number;     // Merkez ışık / çevre ışık oranı
   hasStrongDepthSeparation: boolean;// 3D derinlik haritasında ön/arka plan ayrımı
   dominantSubjectDepth: number;     // 0.0 (sonsuz/arka plan) - 1.0 (ön plan)
@@ -172,6 +173,7 @@ export function extractPhotoFeatures(
   const redBias = sumR / totalChannels;
   const greenBias = sumG / totalChannels;
   const blueBias = sumB / totalChannels;
+  const vegetationIndex = (sumG - sumR) / (sumG + sumR + 0.001);
 
   const meanCenterL = centerPixelCount > 0 ? centerSumL / centerPixelCount : 0.5;
   const meanOuterL = outerPixelCount > 0 ? outerSumL / outerPixelCount : 0.5;
@@ -266,6 +268,7 @@ export function extractPhotoFeatures(
     redBias,
     greenBias,
     blueBias,
+    vegetationIndex,
     centerLuminanceRatio,
     hasStrongDepthSeparation,
     dominantSubjectDepth
@@ -435,9 +438,8 @@ export function analyzeAndRecommendRecipe(
 
   // 5. Yemyeşil Doğa & Botanik Orman (Leica Nordic Botanik)
   if (
-    f.greenBias >= 0.36 &&
-    f.greenBias > f.redBias * 1.05 &&
-    f.greenBias > f.blueBias * 1.05 &&
+    (f.vegetationIndex >= 0.08 || (f.greenBias >= 0.355 && f.greenBias > f.redBias * 1.05)) &&
+    f.greenBias > f.blueBias &&
     f.skinRatio < 0.03
   ) {
     const conf = Math.min(96, Math.round(75 + (f.greenBias - 0.33) * 180 + f.meanSaturation * 20));

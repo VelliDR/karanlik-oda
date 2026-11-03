@@ -16,8 +16,17 @@ export function createCompatibleCanvas(width: number, height: number): AnyCanvas
   throw new Error('Tuval oluşturulamadı: Ortamda ne OffscreenCanvas ne de DOM mevcut.');
 }
 
-// 512x512 organik gümüş halojenür kristal gren tamponu (Box-Muller Gauss dağılımı)
+// 512x512 çok ölçekli (multi-scale) gümüş halojenür ve C-41 boya bulutu kristal tamponu
 let sharedNoiseCanvas: AnyCanvas | null = null;
+
+// Asimetrik Nutting-Weibull fotokimyasal granülarite tepki tablosu (Zone System)
+const NUTTING_GRAIN_LUT = new Uint8Array(256);
+for (let L = 0; L < 256; L++) {
+  const norm = L / 255;
+  // Koyu tonlarda (%15-%35 Zone III-V) zirve yapan, patlamış beyazlarda (%95+) yumuşak sönümlenen fotokimyasal yanıt
+  const weight = Math.max(0, 4.2 * Math.pow(norm, 0.75) * Math.pow(1.0 - norm, 1.4));
+  NUTTING_GRAIN_LUT[L] = Math.min(255, Math.round(weight * 255));
+}
 
 function getSharedNoiseCanvas(): AnyCanvas {
   if (!sharedNoiseCanvas) {
@@ -28,30 +37,56 @@ function getSharedNoiseCanvas(): AnyCanvas {
       const imgData = ctx.createImageData(size, size);
       const data = imgData.data;
 
-      // Box-Muller Gaussian dağılımı: Dijital beyaz gürültü yerine otantik gümüş kristal yoğunluğu
-      for (let i = 0; i < data.length; i += 8) {
+      // 1. Düşük frekanslı mezo kümelenme tablosu (128x128 -> toroidally dikişsiz kümelenme)
+      const clumpGridSize = 128;
+      const clumpGrid = new Float32Array(clumpGridSize * clumpGridSize);
+      for (let i = 0; i < clumpGrid.length; i++) {
         let u1 = Math.random();
-        let u2 = Math.random();
         while (u1 === 0) u1 = Math.random();
+        const u2 = Math.random();
+        clumpGrid[i] = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+      }
 
-        const mag = Math.sqrt(-2.0 * Math.log(u1));
-        const z0 = mag * Math.cos(2.0 * Math.PI * u2);
-        const z1 = mag * Math.sin(2.0 * Math.PI * u2);
+      // 2. Çok ölçekli kristal matrisi üretimi (%65 mikro tekil kristal + %35 mezo boya bulutu kümesi)
+      for (let y = 0; y < size; y++) {
+        const gy = (y / 4) % clumpGridSize;
+        const gy0 = Math.floor(gy);
+        const gy1 = (gy0 + 1) % clumpGridSize;
+        const fy = gy - gy0;
 
-        // Ortalama 128, standart sapma ~42
-        const val0 = Math.min(255, Math.max(0, Math.round(128 + z0 * 42)));
-        const val1 = Math.min(255, Math.max(0, Math.round(128 + z1 * 42)));
+        for (let x = 0; x < size; x++) {
+          const gx = (x / 4) % clumpGridSize;
+          const gx0 = Math.floor(gx);
+          const gx1 = (gx0 + 1) % clumpGridSize;
+          const fx = gx - gx0;
 
-        data[i] = val0;
-        data[i + 1] = val0;
-        data[i + 2] = val0;
-        data[i + 3] = 36; // Doğal kristal opaklığı
+          // Çift doğrusal (bilinear) mezo kümelenme
+          const c00 = clumpGrid[gy0 * clumpGridSize + gx0];
+          const c10 = clumpGrid[gy0 * clumpGridSize + gx1];
+          const c01 = clumpGrid[gy1 * clumpGridSize + gx0];
+          const c11 = clumpGrid[gy1 * clumpGridSize + gx1];
+          const meso = (1 - fy) * ((1 - fx) * c00 + fx * c10) + fy * ((1 - fx) * c01 + fx * c11);
 
-        if (i + 4 < data.length) {
-          data[i + 4] = val1;
-          data[i + 5] = val1;
-          data[i + 6] = val1;
-          data[i + 7] = 36;
+          // Mikro kristal (Box-Muller Gauss)
+          let u1 = Math.random();
+          while (u1 === 0) u1 = Math.random();
+          const u2 = Math.random();
+          const micro = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+
+          const z = 0.65 * micro + 0.35 * meso;
+          const baseVal = Math.min(255, Math.max(0, Math.round(128 + z * 52)));
+
+          // C-41 renkli film boya bulutu mikro renk sapması (Sarı/Mavi katman saçılması)
+          const chromaShift = Math.round(z * 3.5);
+          const r = Math.min(255, Math.max(0, baseVal + chromaShift));
+          const g = baseVal;
+          const b = Math.min(255, Math.max(0, baseVal - chromaShift));
+
+          const idx = (y * size + x) * 4;
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = 255;
         }
       }
       ctx.putImageData(imgData, 0, 0);
@@ -626,8 +661,9 @@ export function applyVignette(target: RenderTarget, intensity: number): void {
 }
 
 /**
- * 🌾 35mm Analog Film Greni (Luminans-Uyarlamalı Çan Eğrisi).
- * Siyahlarda ve patlamış beyazlarda sönümlenir, orta tonlarda (%18 gri Zone V) organik kristal dokusu üretir.
+ * 🌾 35mm Analog Film Greni (Asimetrik Nutting-Weibull Çan Eğrisi & Çözünürlükten Bağımsız Ölçekleme).
+ * Siyahlarda ve patlamış beyazlarda sönümlenir, orta-koyu tonlarda (%18 gri Zone IV-V) organik kristal dokusu üretir.
+ * 35mm negatif oranını koruyarak 48 MP baskı çıktısında da önizleme ile 1:1 aynı görsel sıklığı sağlar.
  */
 export function applyFilmGrain(
   target: RenderTarget,
@@ -638,23 +674,30 @@ export function applyFilmGrain(
 
   const { ctx, width: w, height: h } = target;
 
-  // 1. Luminans orta ton maskesi (L * (1 - L) çan eğrisi)
-  const maskWidth = Math.min(w, 1920);
-  const maskHeight = Math.round((h * maskWidth) / w);
+  // 1. Asimetrik Nutting-Weibull lüminans maskesi
+  const maskWidth = Math.min(w, 800);
+  const maskHeight = Math.max(1, Math.round((h * maskWidth) / w));
   const maskCanvas = createCompatibleCanvas(maskWidth, maskHeight);
   const mCtx = maskCanvas.getContext('2d') as AnyRenderingContext2D | null;
   if (!mCtx) return;
 
-  // Temel parlaklık (L)
-  mCtx.filter = 'grayscale(100%)';
   mCtx.drawImage(target.canvas as CanvasImageSource, 0, 0, maskWidth, maskHeight);
+  const imgData = mCtx.getImageData(0, 0, maskWidth, maskHeight);
+  const data = imgData.data;
 
-  // L * (1 - L) çarpımı: Siyah (0) ve beyaz (1) bölgeler 0'a iner, orta tonlar (0.5) 0.25'e çıkar
-  mCtx.globalCompositeOperation = 'multiply';
-  mCtx.filter = 'grayscale(100%) invert(100%) brightness(350%)';
-  mCtx.drawImage(target.canvas as CanvasImageSource, 0, 0, maskWidth, maskHeight);
+  for (let i = 0; i < data.length; i += 4) {
+    // Rec. 709 Fotometrik Lüminans (Hızlı tam sayı çarpanları: 54*R + 183*G + 19*B >> 8)
+    const lum = (data[i] * 54 + data[i + 1] * 183 + data[i + 2] * 19) >> 8;
+    const weight = NUTTING_GRAIN_LUT[lum];
+    data[i] = 255;
+    data[i + 1] = 255;
+    data[i + 2] = 255;
+    data[i + 3] = weight;
+  }
+  mCtx.putImageData(imgData, 0, 0);
 
-  // 2. Gren tuvali
+  // 2. Çözünürlükten bağımsız ölçekli gren tuvali
+  // Standart 35mm negatif karesinde eni boyunca yaklaşık 1800 kristal kümesi yer alır.
   const grainCanvas = createCompatibleCanvas(w, h);
   const gCtx = grainCanvas.getContext('2d') as AnyRenderingContext2D | null;
   if (!gCtx) {
@@ -663,17 +706,26 @@ export function applyFilmGrain(
     return;
   }
 
-  gCtx.fillStyle = noisePattern;
-  gCtx.fillRect(0, 0, w, h);
+  const grainScale = Math.max(1, Math.round(w / 1800));
+  if (grainScale > 1) {
+    gCtx.save();
+    gCtx.scale(grainScale, grainScale);
+    gCtx.fillStyle = noisePattern;
+    gCtx.fillRect(0, 0, Math.ceil(w / grainScale), Math.ceil(h / grainScale));
+    gCtx.restore();
+  } else {
+    gCtx.fillStyle = noisePattern;
+    gCtx.fillRect(0, 0, w, h);
+  }
 
-  // Greni orta ton maskesi ile sınırla
+  // Greni fotokimyasal lüminans maskesi ile sınırla
   gCtx.globalCompositeOperation = 'destination-in';
   gCtx.drawImage(maskCanvas as CanvasImageSource, 0, 0, w, h);
 
   // 3. Hedefe overlay moduyla yedir
   ctx.save();
   ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = Math.min(1.0, opacity * 1.35);
+  ctx.globalAlpha = Math.min(1.0, opacity * 1.6);
   ctx.drawImage(grainCanvas as CanvasImageSource, 0, 0);
   ctx.restore();
 
