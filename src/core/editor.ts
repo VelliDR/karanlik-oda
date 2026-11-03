@@ -2,6 +2,7 @@ import {
   AnyCanvas,
   EditorSnapshot,
   ExportFormat,
+  PresetDefinition,
   RenderTarget,
   RotationDegree,
   SliderSettings
@@ -117,6 +118,12 @@ export class PhotoEditor {
   public depthStatusMessage = '';
   public depthProgress = 0;
 
+  // 🛡️ Akıllı Ten Koruma Kalkanı Önbelleği
+  private skinMaskCanvas: AnyCanvas | null = null;
+  private skinMaskRotation: RotationDegree | null = null;
+  private skinMaskTargetWidth = 0;
+  private skinMaskTargetHeight = 0;
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = getOptimal2DContext(canvas);
@@ -150,6 +157,7 @@ export class PhotoEditor {
   public async loadImageFromBlob(blob: Blob): Promise<void> {
     this.cleanupUrls();
     this.cleanupDepth();
+    this.cleanupSkinMask();
 
     // 1. Orijinal dosyanın EXIF ve ICC profil segmentlerini koruma için çıkar
     try {
@@ -219,6 +227,7 @@ export class PhotoEditor {
   public rotateClockwise(): void {
     if (!this.hasImage) return;
     this.rotation = ((this.rotation + 90) % 360) as RotationDegree;
+    this.cleanupSkinMask();
     this.rotateDepthCanvasClockwise();
     this.scheduleRender();
   }
@@ -743,52 +752,24 @@ export class PhotoEditor {
       ctx.restore();
     }
 
-    // Preset Renk Örtüsü (Overlay & Split-Toning) - En-Boy Oranı Korumalı Ten Kalkanı ile
+    // Preset Renk Örtüsü (Overlay & Split-Toning)
     if (preset.overlayColor && preset.overlayOpacity > 0) {
-      if (settings.skinProtection > 0) {
-        const skinMask = generateSkinProtectionMask(target.canvas, w, h, settings.skinProtection);
-        if (skinMask) {
-          const overlayCanvas = createCompatibleCanvas(w, h);
-          const oCtx = overlayCanvas.getContext('2d');
-          if (oCtx) {
-            oCtx.fillStyle = preset.overlayColor;
-            oCtx.fillRect(0, 0, w, h);
-            // Ten bölgelerini renk örtüsünden çıkararak koru
-            oCtx.globalCompositeOperation = 'destination-out';
-            oCtx.drawImage(skinMask as CanvasImageSource, 0, 0);
-
-            ctx.save();
-            ctx.globalCompositeOperation = preset.blendMode;
-            ctx.globalAlpha = preset.overlayOpacity;
-            ctx.drawImage(overlayCanvas as CanvasImageSource, 0, 0);
-            ctx.restore();
-
-            overlayCanvas.width = 0;
-            overlayCanvas.height = 0;
-          }
-          skinMask.width = 0;
-          skinMask.height = 0;
-        } else {
-          ctx.save();
-          ctx.globalCompositeOperation = preset.blendMode;
-          ctx.globalAlpha = preset.overlayOpacity;
-          ctx.fillStyle = preset.overlayColor;
-          ctx.fillRect(0, 0, w, h);
-          ctx.restore();
-        }
-      } else {
-        ctx.save();
-        ctx.globalCompositeOperation = preset.blendMode;
-        ctx.globalAlpha = preset.overlayOpacity;
-        ctx.fillStyle = preset.overlayColor;
-        ctx.fillRect(0, 0, w, h);
-        ctx.restore();
-      }
+      ctx.save();
+      ctx.globalCompositeOperation = preset.blendMode;
+      ctx.globalAlpha = preset.overlayOpacity;
+      ctx.fillStyle = preset.overlayColor;
+      ctx.fillRect(0, 0, w, h);
+      ctx.restore();
     }
 
     // Bleach Bypass (Gümüş Koruma Banyosu)
     if (settings.bleachBypass > 0) {
       applyBleachBypass(target, settings.bleachBypass);
+    }
+
+    // 🛡️ AKILLI EN-BOY ORANI KORUMALI TEN KALKANI (Skin Tone Protection Shield)
+    if (settings.skinProtection > 0) {
+      this.applySkinToneProtection(target, sourceImg, rotation, settings, preset);
     }
 
     // Black Pro-Mist (Yumuşak Sisli Parlama & Gölge Koruması)
@@ -860,6 +841,86 @@ export class PhotoEditor {
     ctx.restore();
   }
 
+  private applySkinToneProtection(
+    target: RenderTarget,
+    sourceImg: HTMLImageElement,
+    rotation: RotationDegree,
+    settings: SliderSettings,
+    preset: PresetDefinition
+  ): void {
+    const { ctx, width: w, height: h } = target;
+    const skinMask = this.getOrCreateSkinMask(sourceImg, rotation, w, h);
+    if (!skinMask) return;
+
+    const exp = 100 + settings.exposure;
+    const cleanSkinCanvas = createCompatibleCanvas(w, h);
+    const sCtx = cleanSkinCanvas.getContext('2d') as CanvasRenderingContext2D | null;
+    if (!sCtx) return;
+
+    // Ten tonu filtresi: Aşırı kontrast, yapay renk kayması ve soğukluktan arındırılmış saf ten
+    const skinFilter =
+      preset.id === 'sb'
+        ? `grayscale(100%) brightness(${exp}%) contrast(${Math.round(100 + settings.contrast * 0.35)}%)`
+        : `brightness(${exp}%) contrast(${Math.round(100 + settings.contrast * 0.35)}%) saturate(${Math.max(90, Math.min(115, 100 + settings.saturation * 0.35))}%)`;
+
+    sCtx.save();
+    sCtx.filter = skinFilter;
+    this.drawImageWithRotation({ ctx: sCtx, width: w, height: h, canvas: cleanSkinCanvas }, sourceImg, rotation);
+    sCtx.filter = 'none';
+    sCtx.restore();
+
+    // Maskeyi uygulayarak yalnızca ten alanlarını izole et
+    sCtx.globalCompositeOperation = 'destination-in';
+    sCtx.drawImage(skinMask as CanvasImageSource, 0, 0);
+
+    // İzole edilen doğal teni hedef tuvale koruma gücü oranında (%0 - %100) harmanla
+    ctx.save();
+    ctx.globalAlpha = Math.min(1.0, Math.max(0, settings.skinProtection / 100));
+    ctx.drawImage(cleanSkinCanvas as CanvasImageSource, 0, 0);
+    ctx.restore();
+
+    cleanSkinCanvas.width = 0;
+    cleanSkinCanvas.height = 0;
+  }
+
+  private getOrCreateSkinMask(
+    sourceImg: HTMLImageElement,
+    rotation: RotationDegree,
+    width: number,
+    height: number
+  ): AnyCanvas | null {
+    if (
+      this.skinMaskCanvas &&
+      this.skinMaskRotation === rotation &&
+      this.skinMaskTargetWidth === width &&
+      this.skinMaskTargetHeight === height
+    ) {
+      return this.skinMaskCanvas;
+    }
+
+    this.cleanupSkinMask();
+
+    const mask = generateSkinProtectionMask(sourceImg, width, height, rotation, 512);
+    if (mask) {
+      this.skinMaskCanvas = mask;
+      this.skinMaskRotation = rotation;
+      this.skinMaskTargetWidth = width;
+      this.skinMaskTargetHeight = height;
+    }
+    return mask;
+  }
+
+  private cleanupSkinMask(): void {
+    if (this.skinMaskCanvas) {
+      this.skinMaskCanvas.width = 0;
+      this.skinMaskCanvas.height = 0;
+      this.skinMaskCanvas = null;
+    }
+    this.skinMaskRotation = null;
+    this.skinMaskTargetWidth = 0;
+    this.skinMaskTargetHeight = 0;
+  }
+
   private renderRawImage(
     target: RenderTarget,
     sourceImg: HTMLImageElement,
@@ -915,6 +976,7 @@ export class PhotoEditor {
   public destroy(): void {
     this.cleanupUrls();
     this.cleanupDepth();
+    this.cleanupSkinMask();
     if (this.depthWorker) {
       this.depthWorker.terminate();
       this.depthWorker = null;

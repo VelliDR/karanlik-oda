@@ -1,6 +1,7 @@
 import {
   AnyCanvas,
   ExportFormat,
+  PresetDefinition,
   RenderTarget,
   RotationDegree,
   SliderSettings
@@ -181,51 +182,24 @@ function renderPipelineInWorker(
     ctx.restore();
   }
 
-  // Preset Renk Örtüsü - En-Boy Oranı Korumalı Ten Kalkanı ile
+  // Preset Renk Örtüsü (Overlay & Split-Toning)
   if (preset.overlayColor && preset.overlayOpacity > 0) {
-    if (settings.skinProtection > 0) {
-      const skinMask = generateSkinProtectionMask(target.canvas, w, h, settings.skinProtection);
-      if (skinMask) {
-        const overlayCanvas = createCompatibleCanvas(w, h);
-        const oCtx = overlayCanvas.getContext('2d');
-        if (oCtx) {
-          oCtx.fillStyle = preset.overlayColor;
-          oCtx.fillRect(0, 0, w, h);
-          oCtx.globalCompositeOperation = 'destination-out';
-          oCtx.drawImage(skinMask as CanvasImageSource, 0, 0);
-
-          ctx.save();
-          ctx.globalCompositeOperation = preset.blendMode;
-          ctx.globalAlpha = preset.overlayOpacity;
-          ctx.drawImage(overlayCanvas as CanvasImageSource, 0, 0);
-          ctx.restore();
-
-          overlayCanvas.width = 0;
-          overlayCanvas.height = 0;
-        }
-        skinMask.width = 0;
-        skinMask.height = 0;
-      } else {
-        ctx.save();
-        ctx.globalCompositeOperation = preset.blendMode;
-        ctx.globalAlpha = preset.overlayOpacity;
-        ctx.fillStyle = preset.overlayColor;
-        ctx.fillRect(0, 0, w, h);
-        ctx.restore();
-      }
-    } else {
-      ctx.save();
-      ctx.globalCompositeOperation = preset.blendMode;
-      ctx.globalAlpha = preset.overlayOpacity;
-      ctx.fillStyle = preset.overlayColor;
-      ctx.fillRect(0, 0, w, h);
-      ctx.restore();
-    }
+    ctx.save();
+    ctx.globalCompositeOperation = preset.blendMode;
+    ctx.globalAlpha = preset.overlayOpacity;
+    ctx.fillStyle = preset.overlayColor;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
   }
 
-  // Bleach Bypass
+  // Bleach Bypass (Gümüş Koruma Banyosu)
   if (settings.bleachBypass > 0) {
     applyBleachBypass(target, settings.bleachBypass);
+  }
+
+  // 🛡️ AKILLI EN-BOY ORANI KORUMALI TEN KALKANI (Skin Tone Protection Shield)
+  if (settings.skinProtection > 0) {
+    applySkinToneProtectionInWorker(target, sourceImg, rotation, settings, preset);
   }
 
   // Black Pro-Mist
@@ -313,4 +287,51 @@ function drawImageWithRotationInWorker(
   ctx.rotate((rotation * Math.PI) / 180);
   ctx.drawImage(sourceImg, -srcW / 2, -srcH / 2, srcW, srcH);
   ctx.restore();
+}
+
+function applySkinToneProtectionInWorker(
+  target: RenderTarget,
+  sourceImg: ImageBitmap,
+  rotation: RotationDegree,
+  settings: SliderSettings,
+  preset: PresetDefinition
+): void {
+  const { ctx, width: w, height: h } = target;
+  const skinMask = generateSkinProtectionMask(sourceImg, w, h, rotation, 512);
+  if (!skinMask) return;
+
+  const exp = 100 + settings.exposure;
+  const cleanSkinCanvas = createCompatibleCanvas(w, h);
+  const sCtx = cleanSkinCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D | null;
+  if (!sCtx) {
+    skinMask.width = 0;
+    skinMask.height = 0;
+    return;
+  }
+
+  const skinFilter =
+    preset.id === 'sb'
+      ? `grayscale(100%) brightness(${exp}%) contrast(${Math.round(100 + settings.contrast * 0.35)}%)`
+      : `brightness(${exp}%) contrast(${Math.round(100 + settings.contrast * 0.35)}%) saturate(${Math.max(90, Math.min(115, 100 + settings.saturation * 0.35))}%)`;
+
+  sCtx.save();
+  sCtx.filter = skinFilter;
+  drawImageWithRotationInWorker({ ctx: sCtx, width: w, height: h, canvas: cleanSkinCanvas }, sourceImg, rotation);
+  sCtx.filter = 'none';
+  sCtx.restore();
+
+  // Maskeyi uygulayarak yalnızca ten alanlarını izole et
+  sCtx.globalCompositeOperation = 'destination-in';
+  sCtx.drawImage(skinMask as CanvasImageSource, 0, 0);
+
+  // İzole edilen doğal teni hedef tuvale koruma gücü oranında (%0 - %100) harmanla
+  ctx.save();
+  ctx.globalAlpha = Math.min(1.0, Math.max(0, settings.skinProtection / 100));
+  ctx.drawImage(cleanSkinCanvas as CanvasImageSource, 0, 0);
+  ctx.restore();
+
+  cleanSkinCanvas.width = 0;
+  cleanSkinCanvas.height = 0;
+  skinMask.width = 0;
+  skinMask.height = 0;
 }

@@ -137,15 +137,19 @@ export function extractPhotoFeatures(
         const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
         const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
 
-        if (
-          cr >= 133 &&
-          cr <= 175 &&
-          cb >= 77 &&
-          cb <= 130 &&
+        const isSkin =
+          cr >= 130 &&
+          cr <= 180 &&
+          cb >= 76 &&
+          cb <= 134 &&
           r > g &&
-          g > b &&
-          r - g >= 10
-        ) {
+          r > b &&
+          r - g >= 3 &&
+          r - b >= 5 &&
+          g >= b - 15 &&
+          l >= 0.08 &&
+          l <= 0.96;
+        if (isSkin) {
           skinCount++;
         }
       }
