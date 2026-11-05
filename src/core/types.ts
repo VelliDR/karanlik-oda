@@ -6,11 +6,29 @@ export type PresetKey =
   | 'vampir'
   | 'gotik'
   | 'nordic'
-  | 'cinestill';
+  | 'cinestill'
+  | 'ccd'
+  | 'ccd_y2k';
+
+export interface HeliosParams {
+  intensity: number;      // 0 to 100
+  focalDepth?: number;    // 0.0 to 1.0 (varsayılan 0.5)
+  aperture?: number;      // 0 to 100 (varsayılan 50)
+  catEye?: number;        // 0 to 100
+}
+
+export interface CcdParams {
+  highlightClipping?: number; // Eşik değeri veya yoğunluk
+  verticalSmear?: number;     // Dikey taşma yoğunluğu
+  chromaNoise?: number;       // Gölgelerde dijital kroma gürültüsü
+  unsharpAmount?: number;     // Unsharp mask halesi
+  mode?: 'ccd' | 'ccd_y2k';
+}
 
 export type FilmBorder = 'none' | 'clean-white' | 'darkroom-black' | 'kodak-35mm';
 
 export type ExportFormat = 'image/png' | 'image/jpeg' | 'image/webp';
+
 
 export interface PresetDefinition {
   id: PresetKey;

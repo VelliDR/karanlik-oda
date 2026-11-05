@@ -93,6 +93,8 @@ const depthControls = document.getElementById('depth-controls') as HTMLElement;
 const btnToggleDepthMap = document.getElementById('btn-toggle-depthmap') as HTMLButtonElement;
 const focalDepthBadge = document.getElementById('focal-depth-badge') as HTMLElement;
 const focusIndicator = document.getElementById('focus-indicator') as HTMLElement;
+let focusTimeoutId: ReturnType<typeof setTimeout> | null = null;
+
 
 // ✨ Akıllı Reçete AI Elemanları
 const btnSmartRecipeAnalyze = document.getElementById('btn-smart-recipe-analyze') as HTMLButtonElement;
@@ -544,11 +546,18 @@ canvas.addEventListener('click', (e: MouseEvent) => {
   focusIndicator.style.top = `${(e.clientY - wrapperRect.top) / zoomScale}px`;
   focusIndicator.classList.remove('hidden');
 
-  setTimeout(() => {
+  if (focusTimeoutId) {
+    clearTimeout(focusTimeoutId);
+    focusTimeoutId = null;
+  }
+
+  focusTimeoutId = setTimeout(() => {
     focusIndicator.classList.add('hidden');
+    focusTimeoutId = null;
   }, 700);
 
   history.push(editor.getSnapshot());
+
   updateHistoryButtons();
 });
 

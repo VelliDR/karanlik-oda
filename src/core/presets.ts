@@ -88,5 +88,28 @@ export const PRESETS: Record<PresetKey, PresetDefinition> = {
     blendMode: 'color-burn',
     noise: 0.14,
     description: 'Tungsten film dengesi, gece ışıkları için kırmızı halasyon'
+  },
+  ccd: {
+    id: 'ccd',
+    name: 'Digicam 2004',
+    badge: 'CCD',
+    filter: 'contrast(115%) saturate(135%) brightness(102%)',
+    overlayColor: '#0044aa',
+    overlayOpacity: 0.08,
+    blendMode: 'soft-light',
+    noise: 0,
+    description: '2000’ler Digicam CCD sensörü: Doygun renkler, derin gökyüzü mavisi ve kroma gürültüsü'
+  },
+  ccd_y2k: {
+    id: 'ccd_y2k',
+    name: 'Cyber Flash',
+    badge: 'Y2K',
+    filter: 'contrast(140%) saturate(110%) brightness(112%)',
+    overlayColor: '#ffffff',
+    overlayOpacity: 0.12,
+    blendMode: 'screen',
+    noise: 0,
+    description: 'Y2K sert flaş estetiği: Patlamış parlaklıklar, sert kontrast ve dikey CCD taşması'
   }
 };
+

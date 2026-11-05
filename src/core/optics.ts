@@ -1,4 +1,6 @@
-import { AnyCanvas, AnyRenderingContext2D, FilmBorder, RenderTarget } from './types';
+import { AnyCanvas, AnyRenderingContext2D, CcdParams, FilmBorder, RenderTarget } from './types';
+import { HeliosWebGPUEngine } from './webgpu/HeliosWebGPUEngine';
+
 
 /**
  * Tarayıcı penceresinde HTMLCanvasElement, Web Worker içinde ise OffscreenCanvas üretir.
@@ -167,8 +169,9 @@ export function generateDepthOfFieldMask(
 
 /**
  * 🌀 Helios 44M-4 Merceğinin Kedi Gözü (Cat-Eye) ve Teğetsel Dönen Bokeh (Swirl) Optiği.
- * Merkezdeki veya 3D odak düzlemindeki özneyi keskin korurken, odak dışı bölgelerde
- * optik vinyet ve astigmatizm bükülmesini simüle eder.
+ * WebGPU donanım hızlandırması mevcutsa GPU shader ile sıfır vertex buffer tekniğiyle çalıştırır;
+ * aksi takdirde tek çalışma tuvali, screen harmanlama ve doğrudan destination-in ile 
+ * VRAM sızıntısız 2D yedek motoru işletir.
  */
 export function applySwirlyBokeh(
   target: RenderTarget,
@@ -179,6 +182,24 @@ export function applySwirlyBokeh(
 ): void {
   if (intensity <= 0) return;
 
+  // 1. WebGPU Motoru: Donanım hızlandırmalı Vogel disk spiral bokeh
+  const webgpuEngine = HeliosWebGPUEngine.getInstanceSync();
+  if (webgpuEngine) {
+    const success = webgpuEngine.renderToTarget(
+      target,
+      {
+        intensity,
+        focalDepth,
+        aperture,
+        catEye: 100
+      },
+      depthMask
+    );
+    if (success) return;
+  }
+
+  // 2. Optimize Canvas 2D Fallback:
+  // 3 ayrı tuval yerine tek çalışma tuvali, screen harmanlama ve doğrudan destination-in ile eliptik deformasyon.
   const { ctx, width: w, height: h } = target;
   const cx = w / 2;
   const cy = h / 2;
@@ -186,47 +207,54 @@ export function applySwirlyBokeh(
   const centerRadius = minDim * 0.35;
   const maxRadius = Math.hypot(cx, cy);
 
-  const swirlCanvas = createCompatibleCanvas(w, h);
-  const sCtx = swirlCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (!sCtx) return;
+  const workCanvas = createCompatibleCanvas(w, h);
+  const wCtx = workCanvas.getContext('2d') as AnyRenderingContext2D | null;
+  if (!wCtx) return;
 
-  sCtx.drawImage(target.canvas as CanvasImageSource, 0, 0);
+  wCtx.drawImage(target.canvas as CanvasImageSource, 0, 0);
 
-  // Kedi gözü astigmatizmi: Açısal teğetsel eliptik kayma
+  // Kedi gözü astigmatizmi & teğetsel eliptik deformasyon
+  // Global ctx.rotate afine hilesi yerine teğetsel eksenli eliptik genleşme & screen harmanlama
   const steps = 4;
-  const maxAngle = (intensity / 100) * (w > 2000 ? 3.0 : 1.8);
   const stretch = (intensity / 100) * 0.045;
+  const offsetBase = (intensity / 100) * (minDim * 0.012);
 
-  sCtx.globalAlpha = 0.22;
-  for (let i = -steps; i <= steps; i++) {
-    if (i === 0) continue;
-    const angle = (i / steps) * maxAngle * (Math.PI / 180);
-    const sX = 1.0 + (Math.abs(i) / steps) * stretch;
-    const sY = Math.max(0.88, 1.0 - (Math.abs(i) / steps) * stretch);
+  wCtx.globalCompositeOperation = 'screen';
+  wCtx.globalAlpha = 0.22;
 
-    sCtx.save();
-    sCtx.translate(cx, cy);
-    sCtx.rotate(angle);
-    sCtx.scale(sX, sY); // Anamorfik kedi gözü elips deformasyonu
-    sCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy);
-    sCtx.restore();
+  for (let i = 1; i <= steps; i++) {
+    const factor = i / steps;
+    const sX = 1.0 + factor * stretch;
+    const sY = Math.max(0.75, 1.0 - factor * stretch);
+    const off = factor * offsetBase;
+
+    // Teğetsel eliptik kaydırmalar
+    wCtx.save();
+    wCtx.translate(cx, cy);
+    wCtx.scale(sX, sY);
+    wCtx.drawImage(target.canvas as CanvasImageSource, -cx + off, -cy);
+    wCtx.drawImage(target.canvas as CanvasImageSource, -cx - off, -cy);
+    wCtx.restore();
+
+    wCtx.save();
+    wCtx.translate(cx, cy);
+    wCtx.scale(sY, sX);
+    wCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy + off);
+    wCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy - off);
+    wCtx.restore();
   }
-  sCtx.globalAlpha = 1.0;
 
-  // Maske seçimi: 3D Derinlik haritası varsa onu kullan, yoksa radyal merkeze dön
-  let maskCanvas: AnyCanvas;
+  // Doğrudan destination-in ile odak kalkanı / radyal maskeleme (ara blend tuvalsiz)
+  wCtx.globalCompositeOperation = 'destination-in';
+  wCtx.globalAlpha = 1.0;
+
   if (depthMask) {
-    maskCanvas = generateDepthOfFieldMask(depthMask, w, h, focalDepth, aperture);
+    const dofMask = generateDepthOfFieldMask(depthMask, w, h, focalDepth, aperture);
+    wCtx.drawImage(dofMask as CanvasImageSource, 0, 0);
+    dofMask.width = 0;
+    dofMask.height = 0;
   } else {
-    maskCanvas = createCompatibleCanvas(w, h);
-    const mCtx = maskCanvas.getContext('2d') as AnyRenderingContext2D | null;
-    if (!mCtx) {
-      swirlCanvas.width = 0;
-      swirlCanvas.height = 0;
-      return;
-    }
-
-    const grad = mCtx.createRadialGradient(
+    const grad = wCtx.createRadialGradient(
       cx,
       cy,
       centerRadius * 0.5,
@@ -239,36 +267,213 @@ export function applySwirlyBokeh(
     grad.addColorStop(0.7, 'rgba(0,0,0,0.75)');
     grad.addColorStop(1, 'rgba(0,0,0,1.0)');
 
-    mCtx.fillStyle = grad;
-    mCtx.fillRect(0, 0, w, h);
+    wCtx.fillStyle = grad;
+    wCtx.fillRect(0, 0, w, h);
   }
 
-  const blendCanvas = createCompatibleCanvas(w, h);
-  const bCtx = blendCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (!bCtx) {
-    swirlCanvas.width = 0;
-    swirlCanvas.height = 0;
-    maskCanvas.width = 0;
-    maskCanvas.height = 0;
-    return;
-  }
-
-  bCtx.drawImage(swirlCanvas as CanvasImageSource, 0, 0);
-  bCtx.globalCompositeOperation = 'destination-in';
-  bCtx.drawImage(maskCanvas as CanvasImageSource, 0, 0);
-
+  // Hedef tuvale birleştir
   ctx.save();
-  ctx.drawImage(blendCanvas as CanvasImageSource, 0, 0);
+  ctx.drawImage(workCanvas as CanvasImageSource, 0, 0);
   ctx.restore();
 
   // VRAM temizliği
-  swirlCanvas.width = 0;
-  swirlCanvas.height = 0;
-  maskCanvas.width = 0;
-  maskCanvas.height = 0;
-  blendCanvas.width = 0;
-  blendCanvas.height = 0;
+  workCanvas.width = 0;
+  workCanvas.height = 0;
 }
+
+// 256x256 toroidally dikişsiz dijital CCD kroma gürültüsü deseni
+let sharedChromaCanvas: AnyCanvas | null = null;
+
+function getSharedChromaCanvas(): AnyCanvas {
+  if (!sharedChromaCanvas) {
+    const size = 256;
+    sharedChromaCanvas = createCompatibleCanvas(size, size);
+    const ctx = sharedChromaCanvas.getContext('2d') as AnyRenderingContext2D | null;
+    if (ctx) {
+      const imgData = ctx.createImageData(size, size);
+      const data = imgData.data;
+      for (let i = 0; i < data.length; i += 4) {
+        // Bağımsız dijital RGB kroma saçılması (mor, camgöbeği, yeşil ve mavi piksel benekleri)
+        const nr = Math.min(255, Math.max(0, 128 + Math.round((Math.random() - 0.5) * 110)));
+        const ng = Math.min(255, Math.max(0, 128 + Math.round((Math.random() - 0.5) * 80)));
+        const nb = Math.min(255, Math.max(0, 128 + Math.round((Math.random() - 0.5) * 120)));
+        data[i] = nr;
+        data[i + 1] = ng;
+        data[i + 2] = nb;
+        data[i + 3] = 255;
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+  }
+  return sharedChromaCanvas;
+}
+
+/**
+ * 📷 Erken Dönem CCD Sensör Simülatörü (Digicam 2004 & Cyber Flash Y2K).
+ * 
+ * 1. Sert Kırpılma (Hard Highlight Clipping): Eşik üzerindeki (luma > 230-240) pikselleri saf beyaza kenetleme.
+ * 2. Dikey Elektron Taşması (Vertical CCD Smear): Aşırı parlak noktalardan geçen ince, mor/eflatun ve beyaz düşey ışık çizgileri.
+ * 3. Kroma Gürültüsü (Chroma Speckle): Gölgelerde analog gren yerine mor/yeşil/mavi dijital piksel gürültüsü.
+ * 4. Unsharp Mask Halesi: Kontrast kenarlarında yüksek geçiren filtre saçılması.
+ */
+export function applyCcdAesthetic(target: RenderTarget, params?: CcdParams): void {
+  const { ctx, width: w, height: h } = target;
+  const mode = params?.mode || 'ccd';
+  const isY2K = mode === 'ccd_y2k';
+
+  const clipThreshold = params?.highlightClipping ?? (isY2K ? 228 : 236);
+  const smearIntensity = params?.verticalSmear ?? (isY2K ? 0.95 : 0.65);
+  const chromaNoiseAmt = params?.chromaNoise ?? (isY2K ? 0.28 : 0.22);
+  const unsharpAmount = params?.unsharpAmount ?? (isY2K ? 0.35 : 0.25);
+
+  // 1. Parlaklık Analizi ve Dikey Smear Tespiti (Ölçeklenmiş hızlı analiz tuvali)
+  const maxAnalysisDim = 1024;
+  const scale = Math.min(1.0, maxAnalysisDim / Math.max(w, h));
+  const aw = Math.max(1, Math.round(w * scale));
+  const ah = Math.max(1, Math.round(h * scale));
+
+  const scratchCanvas = createCompatibleCanvas(aw, ah);
+  const sCtx = scratchCanvas.getContext('2d') as AnyRenderingContext2D | null;
+  if (!sCtx) return;
+
+  sCtx.drawImage(target.canvas as CanvasImageSource, 0, 0, aw, ah);
+  const imgData = sCtx.getImageData(0, 0, aw, ah);
+  const data = imgData.data;
+
+  // Dikey kolon doygunluk biriktiricisi (Smear çizgileri için)
+  const colSaturation = new Float32Array(aw);
+
+  // Hard clipping maskesi ve gölge kroma maskesi
+  const clipMask = sCtx.createImageData(aw, ah);
+  const clipData = clipMask.data;
+
+  const shadowMask = sCtx.createImageData(aw, ah);
+  const shadowData = shadowMask.data;
+
+  for (let y = 0; y < ah; y++) {
+    const rowOffset = y * aw;
+    for (let x = 0; x < aw; x++) {
+      const idx = (rowOffset + x) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      // Fotometrik lüminans
+      const luma = (r * 54 + g * 183 + b * 19) >> 8;
+
+      // 1. Sert Kırpılma (Hard Highlight Clipping)
+      if (luma >= clipThreshold) {
+        const excess = (luma - clipThreshold) / (255 - clipThreshold);
+        colSaturation[x] += excess;
+
+        clipData[idx] = 255;
+        clipData[idx + 1] = 255;
+        clipData[idx + 2] = 255;
+        clipData[idx + 3] = 255; // Tam beyaz kenetlenme
+      }
+
+      // 3. Gölgelerde Kroma Benek Maskesi (luma < 75)
+      if (luma < 75) {
+        const shadowFactor = (75 - luma) / 75;
+        shadowData[idx] = 255;
+        shadowData[idx + 1] = 255;
+        shadowData[idx + 2] = 255;
+        shadowData[idx + 3] = Math.round(shadowFactor * 255);
+      }
+    }
+  }
+
+  // --- Adım 1: Sert Kırpılmış Beyazları Tuvale Bas ---
+  sCtx.putImageData(clipMask, 0, 0);
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(scratchCanvas as CanvasImageSource, 0, 0, w, h);
+  ctx.restore();
+
+  // --- Adım 2: Dikey Elektron Taşması (Vertical CCD Smear) ---
+  // Aşırı doymuş piksellerin üzerinden geçen düşey mor/eflatun ve beyaz şeritler
+  const smearMinEnergy = ah * 0.04;
+  const smearPositions: { x: number; strength: number }[] = [];
+
+  for (let x = 1; x < aw - 1; x++) {
+    const energy = colSaturation[x];
+    if (
+      energy > smearMinEnergy &&
+      energy >= colSaturation[x - 1] &&
+      energy >= colSaturation[x + 1]
+    ) {
+      const strength = Math.min(1.0, energy / (ah * 0.22));
+      smearPositions.push({ x: (x / aw) * w, strength });
+    }
+  }
+
+  if (smearPositions.length > 0 && smearIntensity > 0) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+
+    for (const smear of smearPositions) {
+      const alpha = smear.strength * smearIntensity;
+      const lineWidth = Math.max(1.5, Math.round(w * 0.0018));
+
+      // Dış halesi: Parlak magenta / eflatun CCD sızıntısı
+      ctx.strokeStyle = `rgba(235, 40, 200, ${Math.min(0.75, alpha * 0.65)})`;
+      ctx.lineWidth = lineWidth * 2.5;
+      ctx.beginPath();
+      ctx.moveTo(smear.x, 0);
+      ctx.lineTo(smear.x, h);
+      ctx.stroke();
+
+      // İç çekirdek: Doymuş saf beyaz ışık yolu
+      ctx.strokeStyle = `rgba(255, 255, 255, ${Math.min(0.9, alpha * 0.85)})`;
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      ctx.moveTo(smear.x, 0);
+      ctx.lineTo(smear.x, h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // --- Adım 3: Gölgelerde Kroma Gürültüsü (Chroma Speckle) ---
+  if (chromaNoiseAmt > 0) {
+    sCtx.putImageData(shadowMask, 0, 0);
+
+    const noiseCanvas = createCompatibleCanvas(w, h);
+    const nCtx = noiseCanvas.getContext('2d') as AnyRenderingContext2D | null;
+    if (nCtx) {
+      const chromaPattern = nCtx.createPattern(getSharedChromaCanvas() as CanvasImageSource, 'repeat');
+      if (chromaPattern) {
+        nCtx.fillStyle = chromaPattern;
+        nCtx.fillRect(0, 0, w, h);
+
+        nCtx.globalCompositeOperation = 'destination-in';
+        nCtx.drawImage(scratchCanvas as CanvasImageSource, 0, 0, w, h);
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'overlay';
+        ctx.globalAlpha = chromaNoiseAmt;
+        ctx.drawImage(noiseCanvas as CanvasImageSource, 0, 0);
+        ctx.restore();
+      }
+      noiseCanvas.width = 0;
+      noiseCanvas.height = 0;
+    }
+  }
+
+  // --- Adım 4: Unsharp Mask Halesi (High-Pass Kenar Saçılması) ---
+  if (unsharpAmount > 0) {
+    ctx.save();
+    ctx.filter = `contrast(${Math.round(100 + unsharpAmount * 60)}%) brightness(102%)`;
+    ctx.globalCompositeOperation = 'soft-light';
+    ctx.globalAlpha = unsharpAmount * 0.65;
+    ctx.drawImage(target.canvas as CanvasImageSource, 0, 0);
+    ctx.restore();
+  }
+
+  // Bellek temizliği
+  scratchCanvas.width = 0;
+  scratchCanvas.height = 0;
+}
+
 
 /**
  * ⚡ Radyal Kromatik Odak Sapması (Lateral Chromatic Aberration).

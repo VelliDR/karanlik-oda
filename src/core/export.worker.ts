@@ -10,6 +10,7 @@ import { PRESETS } from './presets';
 import {
   applyBlackProMist,
   applyBleachBypass,
+  applyCcdAesthetic,
   applyChromaticAberration,
   applyFilmBorder,
   applyFilmGrain,
@@ -69,7 +70,8 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     const targetHeight = isTransposed ? imageBitmap.width : imageBitmap.height;
 
     const offscreenCanvas = new OffscreenCanvas(targetWidth, targetHeight);
-    const ctx = offscreenCanvas.getContext('2d', { willReadFrequently: true });
+    const ctx = offscreenCanvas.getContext('2d');
+
 
     if (!ctx) {
       throw new Error('OffscreenCanvas 2D bağlamı oluşturulamadı.');
@@ -211,16 +213,21 @@ function renderPipelineInWorker(
   if (settings.swirl > 0) {
     let fullDepthCanvas: AnyCanvas | null = null;
     if (settings.aiDepthEnabled) {
+      // 48 MP OOM çökmesini önlemek için derinlik tuvalini maksimum 1536px ile sınırla
+      const maxDepthDim = 1536;
+      const depthW = Math.min(w, maxDepthDim);
+      const depthH = Math.max(1, Math.round((h * depthW) / w));
+
       if (depthBitmap) {
-        fullDepthCanvas = new OffscreenCanvas(w, h);
+        fullDepthCanvas = new OffscreenCanvas(depthW, depthH);
         const dCtx = fullDepthCanvas.getContext('2d');
         if (dCtx) {
           dCtx.imageSmoothingEnabled = true;
           dCtx.imageSmoothingQuality = 'high';
-          dCtx.drawImage(depthBitmap, 0, 0, w, h);
+          dCtx.drawImage(depthBitmap, 0, 0, depthW, depthH);
         }
       } else if (rawDepth && depthRoi) {
-        fullDepthCanvas = projectDepthMapFromRaw(rawDepth, depthRoi, w, h);
+        fullDepthCanvas = projectDepthMapFromRaw(rawDepth, depthRoi, depthW, depthH);
       }
     }
     applySwirlyBokeh(
@@ -241,25 +248,39 @@ function renderPipelineInWorker(
     applyChromaticAberration(target, settings.chromatic);
   }
 
-  // CineStill 800T Halation
-  if (settings.preset === 'cinestill') {
-    applyHalation(target);
-  }
+  // CCD Estetiği veya Klasik Analog Film Banyo Zinciri
+  const isCcd = settings.preset === 'ccd' || settings.preset === 'ccd_y2k';
+  if (isCcd) {
+    if (settings.lightLeak > 0) {
+      applyLightLeak(target, settings.lightLeak);
+    }
+    applyCcdAesthetic(target, { mode: settings.preset as 'ccd' | 'ccd_y2k' });
 
-  // Light Leak
-  if (settings.lightLeak > 0) {
-    applyLightLeak(target, settings.lightLeak);
-  }
+    if (settings.vignette > 0) {
+      applyVignette(target, settings.vignette);
+    }
+    // CCD presetlerinde analog film greni ve halasyon tamamen atlanır (Bypass Kuralı)
+  } else {
+    // CineStill 800T Çift Loblu Halasyon
+    if (settings.preset === 'cinestill') {
+      applyHalation(target);
+    }
 
-  // Film Grain
-  const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
-  if (activeNoise > 0 && noisePattern) {
-    applyFilmGrain(target, noisePattern, activeNoise);
-  }
+    // Light Leak
+    if (settings.lightLeak > 0) {
+      applyLightLeak(target, settings.lightLeak);
+    }
 
-  // Vignette
-  if (settings.vignette > 0) {
-    applyVignette(target, settings.vignette);
+    // Mekanik Vinyet: Optik kusur olduğu için daima grenden ÖNCE uygulanmalıdır
+    if (settings.vignette > 0) {
+      applyVignette(target, settings.vignette);
+    }
+
+    // 35mm Analog Film Greni: Çerçeve ve tarih damgasından önceki mutlak son katman
+    const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
+    if (activeNoise > 0 && noisePattern) {
+      applyFilmGrain(target, noisePattern, activeNoise);
+    }
   }
 
   // Film Border
@@ -271,6 +292,7 @@ function renderPipelineInWorker(
   if (settings.quartzDate) {
     applyQuartzDate(target, settings.quartzDate, settings.quartzDateText);
   }
+
 }
 
 function drawImageWithRotationInWorker(

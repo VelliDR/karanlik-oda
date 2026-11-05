@@ -11,6 +11,7 @@ import { PRESETS } from './presets';
 import {
   applyBlackProMist,
   applyBleachBypass,
+  applyCcdAesthetic,
   applyChromaticAberration,
   applyFilmBorder,
   applyFilmGrain,
@@ -22,6 +23,8 @@ import {
   createCompatibleCanvas,
   createNoisePattern
 } from './optics';
+import { HeliosWebGPUEngine } from './webgpu/HeliosWebGPUEngine';
+
 import {
   AspectROI,
   generateSkinProtectionMask,
@@ -75,8 +78,7 @@ function getOptimal2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2
   if (isP3Supported) {
     try {
       const p3Ctx = canvas.getContext('2d', {
-        colorSpace: 'display-p3',
-        willReadFrequently: true
+        colorSpace: 'display-p3'
       });
       if (p3Ctx) return p3Ctx;
     } catch {
@@ -84,7 +86,7 @@ function getOptimal2DContext(canvas: HTMLCanvasElement): CanvasRenderingContext2
     }
   }
 
-  const srgbCtx = canvas.getContext('2d', { willReadFrequently: true });
+  const srgbCtx = canvas.getContext('2d');
   if (!srgbCtx) {
     throw new Error('Canvas 2D bağlamı oluşturulamadı.');
   }
@@ -96,7 +98,7 @@ export class PhotoEditor {
   private ctx: CanvasRenderingContext2D;
 
   private originalImg: HTMLImageElement | null = null;
-  private previewImg: HTMLImageElement | null = null;
+  private previewImg: HTMLImageElement | ImageBitmap | null = null;
   private currentObjectUrl: string | null = null;
   private previewObjectUrl: string | null = null;
   private originalMetadataSegments: Uint8Array[] = [];
@@ -127,7 +129,10 @@ export class PhotoEditor {
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = getOptimal2DContext(canvas);
+    // WebGPU motorunu arka planda erkenden hazırla
+    HeliosWebGPUEngine.getOrCreate();
   }
+
 
   public get hasImage(): boolean {
     return this.originalImg !== null;
@@ -195,21 +200,20 @@ export class PhotoEditor {
     pCtx.imageSmoothingQuality = 'high';
     pCtx.drawImage(img, 0, 0, pw, ph);
 
-    // Kayıpsız PNG formatında önizleme oluştur (DCT kirliliği ve renk kaybı yok)
-    const previewBlob = await new Promise<Blob>((resolve) => {
-      previewCanvas.toBlob((b) => resolve(b || blob), 'image/png');
-    });
+    // Önizleme görselini çift kod çözme gecikmesi olmadan doğrudan GPU dokusu (ImageBitmap) olarak al
+    if (this.previewImg && 'close' in this.previewImg) {
+      this.previewImg.close();
+    }
+    this.previewImg = await createImageBitmap(previewCanvas);
 
     previewCanvas.width = 0;
     previewCanvas.height = 0;
-
-    this.previewObjectUrl = URL.createObjectURL(previewBlob);
-    this.previewImg = await this.loadImageElement(this.previewObjectUrl);
 
     this.rotation = 0;
     this.resetSettings();
     this.scheduleRender();
   }
+
 
   private loadImageElement(url: string): Promise<HTMLImageElement> {
     return new Promise((resolve, reject) => {
@@ -304,8 +308,10 @@ export class PhotoEditor {
 
     const sourceImg = this.previewImg || this.originalImg!;
     const isTransposed = this.rotation === 90 || this.rotation === 270;
-    const w = isTransposed ? sourceImg.naturalHeight : sourceImg.naturalWidth;
-    const h = isTransposed ? sourceImg.naturalWidth : sourceImg.naturalHeight;
+    const srcW = 'naturalWidth' in sourceImg ? sourceImg.naturalWidth : sourceImg.width;
+    const srcH = 'naturalHeight' in sourceImg ? sourceImg.naturalHeight : sourceImg.height;
+    const w = isTransposed ? srcH : srcW;
+    const h = isTransposed ? srcW : srcH;
 
     const sourceCanvas = createCompatibleCanvas(w, h);
     const sCtx = sourceCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
@@ -319,12 +325,13 @@ export class PhotoEditor {
       sCtx.rotate((this.rotation * Math.PI) / 180);
       sCtx.drawImage(
         sourceImg,
-        -sourceImg.naturalWidth / 2,
-        -sourceImg.naturalHeight / 2
+        -srcW / 2,
+        -srcH / 2
       );
     } else {
       sCtx.drawImage(sourceImg, 0, 0);
     }
+
 
     const { floatArray, roi } = prepareDepthInputTensor(sourceCanvas, w, h, 518);
     sourceCanvas.width = 0;
@@ -469,8 +476,10 @@ export class PhotoEditor {
 
     const sourceImg = this.previewImg || this.originalImg!;
     const isTransposed = this.rotation === 90 || this.rotation === 270;
-    const w = isTransposed ? sourceImg.naturalHeight : sourceImg.naturalWidth;
-    const h = isTransposed ? sourceImg.naturalWidth : sourceImg.naturalHeight;
+    const srcW = 'naturalWidth' in sourceImg ? sourceImg.naturalWidth : sourceImg.width;
+    const srcH = 'naturalHeight' in sourceImg ? sourceImg.naturalHeight : sourceImg.height;
+    const w = isTransposed ? srcH : srcW;
+    const h = isTransposed ? srcW : srcH;
 
     const sourceCanvas = createCompatibleCanvas(w, h);
     const sCtx = sourceCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
@@ -481,12 +490,13 @@ export class PhotoEditor {
       sCtx.rotate((this.rotation * Math.PI) / 180);
       sCtx.drawImage(
         sourceImg,
-        -sourceImg.naturalWidth / 2,
-        -sourceImg.naturalHeight / 2
+        -srcW / 2,
+        -srcH / 2
       );
     } else {
       sCtx.drawImage(sourceImg, 0, 0);
     }
+
 
     const suggestion = analyzeAndRecommendRecipe(sourceCanvas, w, h, this.depthCanvas);
     sourceCanvas.width = 0;
@@ -518,8 +528,11 @@ export class PhotoEditor {
     if (!this.previewImg) return;
 
     const isTransposed = this.rotation === 90 || this.rotation === 270;
-    const targetWidth = isTransposed ? this.previewImg.naturalHeight : this.previewImg.naturalWidth;
-    const targetHeight = isTransposed ? this.previewImg.naturalWidth : this.previewImg.naturalHeight;
+    const srcW = 'naturalWidth' in this.previewImg ? this.previewImg.naturalWidth : this.previewImg.width;
+    const srcH = 'naturalHeight' in this.previewImg ? this.previewImg.naturalHeight : this.previewImg.height;
+    const targetWidth = isTransposed ? srcH : srcW;
+    const targetHeight = isTransposed ? srcW : srcH;
+
 
     if (this.canvas.width !== targetWidth || this.canvas.height !== targetHeight) {
       this.canvas.width = targetWidth;
@@ -711,7 +724,7 @@ export class PhotoEditor {
    */
   private renderPipeline(
     target: RenderTarget,
-    sourceImg: HTMLImageElement,
+    sourceImg: HTMLImageElement | ImageBitmap,
     settings: SliderSettings,
     rotation: RotationDegree,
     noisePattern: CanvasPattern | null
@@ -793,25 +806,39 @@ export class PhotoEditor {
       applyChromaticAberration(target, settings.chromatic);
     }
 
-    // CineStill 800T Çift Loblu Halasyon
-    if (settings.preset === 'cinestill') {
-      applyHalation(target);
-    }
+    // CCD Estetiği veya Klasik Analog Film Banyo Zinciri
+    const isCcd = settings.preset === 'ccd' || settings.preset === 'ccd_y2k';
+    if (isCcd) {
+      if (settings.lightLeak > 0) {
+        applyLightLeak(target, settings.lightLeak);
+      }
+      applyCcdAesthetic(target, { mode: settings.preset as 'ccd' | 'ccd_y2k' });
 
-    // Işık Sızıntısı (Light Leak)
-    if (settings.lightLeak > 0) {
-      applyLightLeak(target, settings.lightLeak);
-    }
+      if (settings.vignette > 0) {
+        applyVignette(target, settings.vignette);
+      }
+      // CCD presetlerinde analog film greni ve halasyon tamamen atlanır (Bypass Kuralı)
+    } else {
+      // CineStill 800T Çift Loblu Halasyon
+      if (settings.preset === 'cinestill') {
+        applyHalation(target);
+      }
 
-    // 35mm Analog Film Greni (Luminans-Uyarlamalı Çan Eğrisi)
-    const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
-    if (activeNoise > 0 && noisePattern) {
-      applyFilmGrain(target, noisePattern, activeNoise);
-    }
+      // Işık Sızıntısı (Light Leak)
+      if (settings.lightLeak > 0) {
+        applyLightLeak(target, settings.lightLeak);
+      }
 
-    // Mekanik Vinyet (cos⁴ kanunu)
-    if (settings.vignette > 0) {
-      applyVignette(target, settings.vignette);
+      // Mekanik Vinyet: Optik kusur olduğu için daima grenden ÖNCE uygulanmalıdır
+      if (settings.vignette > 0) {
+        applyVignette(target, settings.vignette);
+      }
+
+      // 35mm Analog Film Greni: Çerçeve ve tarih damgasından önceki mutlak son katman
+      const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
+      if (activeNoise > 0 && noisePattern) {
+        applyFilmGrain(target, noisePattern, activeNoise);
+      }
     }
 
     // Çerçeve (Film Border)
@@ -827,12 +854,12 @@ export class PhotoEditor {
 
   private drawImageWithRotation(
     target: RenderTarget,
-    sourceImg: HTMLImageElement,
+    sourceImg: HTMLImageElement | ImageBitmap,
     rotation: RotationDegree
   ): void {
     const { ctx, width: w, height: h } = target;
-    const srcW = sourceImg.naturalWidth;
-    const srcH = sourceImg.naturalHeight;
+    const srcW = 'naturalWidth' in sourceImg ? sourceImg.naturalWidth : sourceImg.width;
+    const srcH = 'naturalHeight' in sourceImg ? sourceImg.naturalHeight : sourceImg.height;
 
     ctx.save();
     ctx.translate(w / 2, h / 2);
@@ -843,7 +870,7 @@ export class PhotoEditor {
 
   private applySkinToneProtection(
     target: RenderTarget,
-    sourceImg: HTMLImageElement,
+    sourceImg: HTMLImageElement | ImageBitmap,
     rotation: RotationDegree,
     settings: SliderSettings,
     preset: PresetDefinition
@@ -884,7 +911,7 @@ export class PhotoEditor {
   }
 
   private getOrCreateSkinMask(
-    sourceImg: HTMLImageElement,
+    sourceImg: HTMLImageElement | ImageBitmap,
     rotation: RotationDegree,
     width: number,
     height: number
@@ -923,9 +950,10 @@ export class PhotoEditor {
 
   private renderRawImage(
     target: RenderTarget,
-    sourceImg: HTMLImageElement,
+    sourceImg: HTMLImageElement | ImageBitmap,
     rotation: RotationDegree
   ): void {
+
     const { ctx, width: w, height: h } = target;
     ctx.clearRect(0, 0, w, h);
     this.drawImageWithRotation(target, sourceImg, rotation);
@@ -982,9 +1010,13 @@ export class PhotoEditor {
       this.depthWorker = null;
     }
     this.originalImg = null;
+    if (this.previewImg && 'close' in this.previewImg) {
+      this.previewImg.close();
+    }
     this.previewImg = null;
     this.originalMetadataSegments = [];
     this.canvas.width = 0;
     this.canvas.height = 0;
   }
+
 }
