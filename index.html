@@ -175,22 +175,26 @@
           </div>
         </div>
 
-        <!-- Banyo Reçeteleri -->
+        <!-- 3D LUT Banyo Reçeteleri -->
         <div class="bg-m3-surface p-3 rounded-2xl border border-m3-border space-y-2">
           <div class="flex justify-between items-center">
-            <span class="text-[9px] text-m3-red/60 font-mono tracking-wider font-semibold">BANYO REÇETELERİ</span>
-            <span id="active-preset-desc" class="text-[9px] text-white/40 font-mono truncate max-w-[170px]">Orijinal</span>
+            <span class="text-[9px] text-m3-red/60 font-mono tracking-wider font-semibold">3D LUT EMÜLSİYONLAR (33³ TETRAHEDRAL)</span>
+            <button id="btn-load-cube-lut" type="button" class="px-2 py-0.5 text-[9px] font-mono font-bold bg-m3-red-dark/70 hover:bg-m3-red-dark text-m3-red border border-m3-border rounded-lg cursor-pointer transition-colors" title="Harici 33x33x33 veya 65x65x65 .CUBE 3D LUT profili yükle">
+              🧊 .CUBE Yükle
+            </button>
+            <input type="file" id="cube-lut-input" accept=".cube,text/plain" class="hidden">
           </div>
+          <p id="active-preset-desc" class="text-[9px] text-white/50 font-mono truncate">Birebir saf orijinal negatif (H&D omuz sürgüsüyle yüksek ışıklar manuel sıkıştırılabilir)</p>
           <div id="presets-container" class="grid grid-cols-2 gap-1.5"></div>
         </div>
 
-        <!-- Temel Pozlama ve Ton -->
+        <!-- Temel Pozlama & H&D Sensitometri Eğrisi -->
         <div class="bg-m3-surface p-3.5 rounded-2xl border border-m3-border space-y-2.5">
-          <span class="text-[9px] block text-m3-red/60 font-mono tracking-wider font-semibold">TEMEL TONLAMA</span>
+          <span class="text-[9px] block text-m3-red/60 font-mono tracking-wider font-semibold">H&D SENSİTOMETRİ VE TONLAMA</span>
           
           <div class="space-y-1">
             <div class="flex justify-between text-[10px] font-mono">
-              <span>POZLAMA</span>
+              <span>POZLAMA (EV)</span>
               <span id="val-exposure">0</span>
             </div>
             <input type="range" id="slider-exposure" min="-100" max="100" value="0" class="w-full">
@@ -198,13 +202,22 @@
 
           <div class="space-y-1">
             <div class="flex justify-between text-[10px] font-mono">
-              <span>KONTRAST</span>
+              <span>H&D EĞİM (KONTRAST)</span>
               <span id="val-contrast">0</span>
             </div>
             <input type="range" id="slider-contrast" min="-100" max="100" value="0" class="w-full">
           </div>
 
-          <div class="space-y-1">
+          <div class="space-y-1 border-t border-m3-border/40 pt-2">
+            <div class="flex justify-between text-[10px] font-mono text-amber-300">
+              <span>📈 H&D FİLM OMZU (SHOULDER)</span>
+              <span id="val-shoulder">0</span>
+            </div>
+            <input type="range" id="slider-shoulder" min="0" max="100" value="0" class="w-full accent-amber-500">
+            <p class="text-[8px] text-white/40 font-mono">Hurter & Driffield S-eğrisiyle yüksek ışıkları film omzuna sıkıştırır, dijital patlamayı önler</p>
+          </div>
+
+          <div class="space-y-1 border-t border-m3-border/40 pt-2">
             <div class="flex justify-between text-[10px] font-mono">
               <span>DOYGUNLUK</span>
               <span id="val-saturation">0</span>
@@ -214,7 +227,7 @@
 
           <div class="space-y-1">
             <div class="flex justify-between text-[10px] font-mono">
-              <span>SICAKLIK</span>
+              <span>SICAKLIK (BRADFORD K)</span>
               <span id="val-warmth">0</span>
             </div>
             <input type="range" id="slider-warmth" min="-100" max="100" value="0" class="w-full">
@@ -227,7 +240,7 @@
               <span id="val-skinProtection">0</span>
             </div>
             <input type="range" id="slider-skinProtection" min="0" max="100" value="0" class="w-full accent-emerald-500">
-            <p class="text-[8px] text-white/40 font-mono">En-boy oranını 1:1 koruyarak insan tenini soğuk filtre ve split-toning'den korur</p>
+            <p class="text-[8px] text-white/40 font-mono">En-boy oranını 1:1 koruyarak insan tenini H&D Portra eğrisiyle korur</p>
           </div>
         </div>
       </div>
@@ -235,10 +248,20 @@
       <!-- TAB 2: FİLM EMÜLSİYONU & KİMYASAL KUSURLAR -->
       <div id="tab-emulsion" class="deck-panel hidden space-y-3">
         <div class="bg-m3-surface p-3.5 rounded-2xl border border-m3-border space-y-3">
-          <span class="text-[9px] block text-amber-400 font-mono tracking-wider font-semibold">KİMYASAL KUSURLAR & IŞIK</span>
+          <span class="text-[9px] block text-amber-400 font-mono tracking-wider font-semibold">SPEKTRAL EMÜLSİYON & KİMYASAL BANYO</span>
+
+          <!-- 650nm Spektral Kırılmalı Halasyon -->
+          <div class="space-y-1">
+            <div class="flex justify-between text-[10px] font-mono text-red-300">
+              <span>🔴 650NM SPEKTRAL HALASYON</span>
+              <span id="val-halation">0</span>
+            </div>
+            <input type="range" id="slider-halation" min="0" max="100" value="0" class="w-full accent-red-500">
+            <p class="text-[8px] text-white/40 font-mono">450/550/650nm dalga boyuna göre dağılan ve film tabanından geri seken fiziksel saçılma</p>
+          </div>
 
           <!-- Işık Sızıntısı (Light Leak) -->
-          <div class="space-y-1">
+          <div class="space-y-1 border-t border-m3-border/40 pt-2">
             <div class="flex justify-between text-[10px] font-mono text-amber-300">
               <span>☀️ IŞIK SIZINTISI (LIGHT LEAK)</span>
               <span id="val-lightLeak">0</span>
@@ -264,7 +287,7 @@
               <span id="val-bleachBypass">0</span>
             </div>
             <input type="range" id="slider-bleachBypass" min="0" max="100" value="0" class="w-full accent-cyan-500">
-            <p class="text-[8px] text-white/40 font-mono">Gümüşün filmde bırakılmasıyla oluşan metalik sert kontrast</p>
+            <p class="text-[8px] text-white/40 font-mono">Gümüşün filmde bırakılmasıyla oluşan H&D omuz korumalı metalik kontrast</p>
           </div>
         </div>
       </div>

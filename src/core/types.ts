@@ -1,14 +1,35 @@
 export type PresetKey =
   | 'none'
   | 'sb'
+  | 'hp5'
   | 'analog'
+  | 'kodachrome'
+  | 'velvia'
   | 'reze'
   | 'vampir'
   | 'gotik'
   | 'nordic'
   | 'cinestill'
   | 'ccd'
-  | 'ccd_y2k';
+  | 'ccd_y2k'
+  | 'custom_lut';
+
+export interface CubeLUT3D {
+  title: string;
+  size: number; // 33 (33x33x33) veya 65 (65x65x65)
+  domainMin: [number, number, number];
+  domainMax: [number, number, number];
+  data: Float32Array; // size * size * size * 4 (RGBA f32)
+}
+
+export interface SensitometryParams {
+  toeStrength: number;     // Dip tonlarda (toe) logaritmik uyanış
+  gammaSlope: number;      // Orta tonlarda (straight-line) karakteristik eğim
+  shoulderRollOff: number; // Yüksek ışıklarda (shoulder) yumuşak doygunluk sönümlenmesi
+  dMin: number;            // Base + Fog taban yoğunluğu
+  dMax: number;            // Maksimum yoğunluk tavanı
+  highlightDesat: number;  // Omuz bölgesinde çapraz kanal doygunluk sönümlenmesi
+}
 
 export interface HeliosParams {
   intensity: number;      // 0 to 100
@@ -34,23 +55,24 @@ export interface PresetDefinition {
   id: PresetKey;
   name: string;
   badge?: string;
-  filter: string;
-  overlayColor: string | null;
-  overlayOpacity: number;
-  blendMode: GlobalCompositeOperation;
   noise: number;
+  defaultShoulder?: number;
+  defaultHalation?: number;
+  sensitometry: SensitometryParams;
   description?: string;
 }
 
 export interface SliderSettings {
-  // Temel Banyo
+  // Temel Banyo & H&D Sensitometri
   exposure: number;     // -100 to 100
   contrast: number;     // -100 to 100
+  shoulder: number;     // 0 to 100 (H&D Film Omzu / Highlight Roll-off Sıkıştırması)
   saturation: number;   // -100 to 100
   warmth: number;       // -100 to 100
   preset: PresetKey;
 
   // Film Emülsiyonu & Kimyasal Kusurlar
+  halation: number;     // 0 to 100 (650nm Spektral Kırılmalı Halasyon)
   grain: number;        // 0 to 100 (Ekstra manuel gren ayarı)
   lightLeak: number;    // 0 to 100 (Analog ışık sızıntısı)
   bleachBypass: number; // 0 to 100 (Gümüş tutma banyosu)

@@ -628,79 +628,203 @@ export function applyChromaticAberration(target: RenderTarget, intensity: number
 }
 
 /**
- * 🎬 CineStill 800T Çift Loblu (Dual-Lobe) Halasyon Algoritması.
- * Parlak ışıkların film tabanından geri sekerek kırmızı emülsiyonu yakmasını taklit eder.
- * Çekirdek ışığı beyaz korurken, sınır çizgilerine sıcak turuncu-kızıl kor ve dış kırmızı hare bırakır.
+ * Hızlı 1B ayrılabilir (separable) 2-geçişli (tent/parabolic) fiziksel difüzyon çekirdeği.
  */
-export function applyHalation(target: RenderTarget): void {
+function diffuseSpectralBand(
+  src: Float32Array,
+  width: number,
+  height: number,
+  radius: number
+): Float32Array {
+  const r = Math.max(1, Math.min(Math.floor(Math.min(width, height) / 2 - 1), Math.round(radius)));
+  if (r <= 0) return new Float32Array(src);
+
+  const size = width * height;
+  let current = new Float32Array(src);
+  const temp = new Float32Array(size);
+  const next = new Float32Array(size);
+
+  // 2 geçişli ayrılabilir konvolüsyon (kutu -> üçgen/Cauchy benzeri pürüzsüz radyal dağılım)
+  for (let pass = 0; pass < 2; pass++) {
+    // Yatay geçiş
+    for (let y = 0; y < height; y++) {
+      const rowOffset = y * width;
+      let sum = 0;
+      let count = 0;
+      for (let x = -r; x <= r; x++) {
+        if (x >= 0 && x < width) {
+          sum += current[rowOffset + x];
+          count++;
+        }
+      }
+      temp[rowOffset] = sum / count;
+
+      for (let x = 1; x < width; x++) {
+        const left = x - r - 1;
+        const right = x + r;
+        if (left >= 0) {
+          sum -= current[rowOffset + left];
+          count--;
+        }
+        if (right < width) {
+          sum += current[rowOffset + right];
+          count++;
+        }
+        temp[rowOffset + x] = sum / count;
+      }
+    }
+
+    // Dikey geçiş
+    for (let x = 0; x < width; x++) {
+      let sum = 0;
+      let count = 0;
+      for (let y = -r; y <= r; y++) {
+        if (y >= 0 && y < height) {
+          sum += temp[y * width + x];
+          count++;
+        }
+      }
+      next[x] = sum / count;
+
+      for (let y = 1; y < height; y++) {
+        const top = y - r - 1;
+        const bottom = y + r;
+        if (top >= 0) {
+          sum -= temp[top * width + x];
+          count--;
+        }
+        if (bottom < height) {
+          sum += temp[bottom * width + x];
+          count++;
+        }
+        next[y * width + x] = sum / count;
+      }
+    }
+
+    current.set(next);
+  }
+
+  return current;
+}
+
+/**
+ * 🌈 Spektral Kırılmalı Halasyon (Wavelength-Dispersive Physical Film Base Backscatter).
+ *
+ * Çift loblu basit CSS Gauss bulanıklığı ve düz renk boyaması yerine:
+ * 1. Üst Mavi Katman (450 nm): Güçlü soğurulma, yalnızca mikro ileri saçılma (r450 = 0.12 * R).
+ * 2. Orta Yeşil Katman (550 nm): Gümüş halojenür kristallerinde kısmi Mie saçılması (r550 = 0.35 * R),
+ *    parlak ışık sınırında doğal altın-kehribar çekirdek geçişi üretir.
+ * 3. Alt Kırmızı Katman & Film Tabanı (650 nm): Uzun dalga boylu kırmızı fotonlar üst katmanları aşarak
+ *    selüloz triasetat film tabanından (n ≈ 1.48, kritik açı θc ≈ 42.5°) tam yansımayla geri seker ve
+ *    kırmızıya duyarlı alt emülsiyonu geniş bir Cauchy-Lorentz dağılımıyla (r650 = R) pozlar.
+ * 4. Saçılan foton enerjisi H&D omuz sönümlenmesiyle (1 - exp(-E)) sıkıştırılarak görüntünün açık tonlarını
+ *    plastikleştirmeden mühürlenir.
+ */
+export function applyHalation(target: RenderTarget, intensity: number = 68): void {
+  if (intensity <= 0) return;
+
   const { ctx, width: w, height: h } = target;
+  if (w <= 0 || h <= 0) return;
 
-  // Adım 1: Yüksek parlaklıkları ve ışık kaynaklarını izole et (Thresholding)
-  const hlWidth = Math.min(w, 1920);
-  const hlHeight = Math.round((h * hlWidth) / w);
-  const hlCanvas = createCompatibleCanvas(hlWidth, hlHeight);
-  const hlCtx = hlCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (!hlCtx) return;
+  const halStrength = Math.min(1.0, Math.max(0, intensity / 100));
 
-  // Parlaklığı izole eden yüksek kontrastlı eşikleme
-  hlCtx.filter = 'brightness(0.7) contrast(3.6)';
-  hlCtx.drawImage(target.canvas as CanvasImageSource, 0, 0, hlWidth, hlHeight);
+  // Spektral saçılma haritası çözünürlüğü (performans ve pürüzsüzlük dengesi)
+  const maxDim = 560;
+  const scale = Math.min(1.0, maxDim / Math.max(w, h));
+  const sw = Math.max(16, Math.round(w * scale));
+  const sh = Math.max(16, Math.round(h * scale));
+  const numPixels = sw * sh;
 
-  // Adım 2: Çift Kademeli Saçılma (Dual-Lobe Scatter)
-  const glowCanvas = createCompatibleCanvas(w, h);
-  const gCtx = glowCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (!gCtx) {
-    hlCanvas.width = 0;
-    hlCanvas.height = 0;
-    return;
+  const scatterCanvas = createCompatibleCanvas(sw, sh);
+  const sCtx = scatterCanvas.getContext('2d') as AnyRenderingContext2D | null;
+  if (!sCtx) return;
+
+  sCtx.imageSmoothingEnabled = true;
+  sCtx.imageSmoothingQuality = 'high';
+  sCtx.drawImage(target.canvas as CanvasImageSource, 0, 0, sw, sh);
+
+  const imgData = sCtx.getImageData(0, 0, sw, sh);
+  const data = imgData.data;
+
+  // Spektral emisyon tamponları (Lineer foton enerjisi)
+  const emit650 = new Float32Array(numPixels); // 650 nm Kırmızı (Film tabanı geri yansıması)
+  const emit550 = new Float32Array(numPixels); // 550 nm Yeşil/Kehribar (Orta katman Mie saçılması)
+  const emit450 = new Float32Array(numPixels); // 450 nm Mavi (Üst katman mikro saçılma)
+
+  for (let i = 0; i < numPixels; i++) {
+    const idx = i * 4;
+    const sr = data[idx] / 255;
+    const sg = data[idx + 1] / 255;
+    const sb = data[idx + 2] / 255;
+
+    // Yaklaşık lineer sahne radyansı
+    const lr = sr * sr;
+    const lg = sg * sg;
+    const lb = sb * sb;
+    const luma = 0.26 * lr + 0.64 * lg + 0.10 * lb;
+
+    if (luma > 0.34) {
+      const e650 = Math.pow((luma - 0.34) / 0.66, 2.1) * (0.65 * lr + 0.35 * luma);
+      emit650[i] = e650;
+    }
+    if (luma > 0.44) {
+      const e550 = Math.pow((luma - 0.44) / 0.56, 2.4) * (0.50 * lg + 0.50 * luma);
+      emit550[i] = e550;
+    }
+    if (luma > 0.56) {
+      const e450 = Math.pow((luma - 0.56) / 0.44, 2.7) * lb;
+      emit450[i] = e450;
+    }
   }
 
-  // Lobe 1: İç Çekirdek Saçılması (Dar yarıçap, yoğun kehribar/turuncu-kırmızı)
-  const innerBlur = Math.max(5, Math.round(w * 0.007));
-  const innerCanvas = createCompatibleCanvas(w, h);
-  const inCtx = innerCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (inCtx) {
-    inCtx.filter = `blur(${innerBlur}px) brightness(1.6)`;
-    inCtx.drawImage(hlCanvas as CanvasImageSource, 0, 0, w, h);
-    inCtx.globalCompositeOperation = 'source-in';
-    inCtx.fillStyle = '#ff4d00'; // Sıcak alev kırmızısı
-    inCtx.fillRect(0, 0, w, h);
+  // Dalga boyuna göre fiziksel kırılma yarıçapları
+  const baseRadius = Math.max(4, Math.round(Math.max(sw, sh) * (0.016 + halStrength * 0.024)));
+  const r650Outer = baseRadius;
+  const r650CritRing = Math.max(2, Math.round(baseRadius * 0.44)); // Kritik açı (~42.5°) taban yansıma halkası
+  const r550Mid = Math.max(2, Math.round(baseRadius * 0.32));      // 550nm orta katman yarıçapı
+  const r450Top = Math.max(1, Math.round(baseRadius * 0.12));      // 450nm üst katman yarıçapı
 
-    gCtx.drawImage(innerCanvas as CanvasImageSource, 0, 0);
-    innerCanvas.width = 0;
-    innerCanvas.height = 0;
+  const diff650Outer = diffuseSpectralBand(emit650, sw, sh, r650Outer);
+  const diff650Inner = diffuseSpectralBand(emit650, sw, sh, r650CritRing);
+  const diff550 = diffuseSpectralBand(emit550, sw, sh, r550Mid);
+  const diff450 = diffuseSpectralBand(emit450, sw, sh, r450Top);
+
+  // Spektral saçılma haritasını H&D omuz sönümlenmesiyle birleştir
+  const gain = halStrength * 1.65;
+  for (let i = 0; i < numPixels; i++) {
+    const idx = i * 4;
+
+    // 650nm çift bileşenli Cauchy-Lorentz + kritik açı geri yansıma yoğunluğu
+    const s650 = (diff650Inner[i] * 0.58 + diff650Outer[i] * 0.72) * gain;
+    const s550 = diff550[i] * gain;
+    const s450 = diff450[i] * gain;
+
+    // Katmanlar arası spektral kuplaj:
+    // Çekirdek sınırında 650nm + 550nm -> sıcak altın/kehribar kor; dış halede saf 650nm yakut kırmızısı
+    const hR = 1.0 - Math.exp(-(s650 * 1.45 + s550 * 0.28));
+    const hG = 1.0 - Math.exp(-(s550 * 0.42 + s650 * 0.05));
+    const hB = 1.0 - Math.exp(-(s450 * 0.12));
+
+    // karekök ile sRGB algısal uzaya dönüşüm
+    data[idx] = Math.min(255, Math.round(Math.sqrt(hR) * 255));
+    data[idx + 1] = Math.min(255, Math.round(Math.sqrt(hG) * 255));
+    data[idx + 2] = Math.min(255, Math.round(Math.sqrt(hB) * 255));
+    data[idx + 3] = 255;
   }
 
-  // Lobe 2: Dış Atmosferik Saçılma (Geniş yarıçap, derin kantaşı kırmızısı)
-  const outerBlur = Math.max(14, Math.round(w * 0.022));
-  const outerCanvas = createCompatibleCanvas(w, h);
-  const outCtx = outerCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (outCtx) {
-    outCtx.filter = `blur(${outerBlur}px) brightness(1.3)`;
-    outCtx.drawImage(hlCanvas as CanvasImageSource, 0, 0, w, h);
-    outCtx.globalCompositeOperation = 'source-in';
-    outCtx.fillStyle = '#cc0022'; // Derin sinema kırmızı halesi
-    outCtx.fillRect(0, 0, w, h);
+  sCtx.putImageData(imgData, 0, 0);
 
-    gCtx.globalCompositeOperation = 'screen';
-    gCtx.globalAlpha = 0.75;
-    gCtx.drawImage(outerCanvas as CanvasImageSource, 0, 0);
-    outerCanvas.width = 0;
-    outerCanvas.height = 0;
-  }
-
-  // Adım 3: Orijinal görsele yumuşak screen harmanlamasıyla mühürle
+  // Hedef tuvale bilinear enterpolasyon ve screen foton toplamasıyla uygula
   ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = 0.55;
-  ctx.drawImage(glowCanvas as CanvasImageSource, 0, 0);
+  ctx.globalAlpha = Math.min(0.85, 0.35 + halStrength * 0.50);
+  ctx.drawImage(scatterCanvas as CanvasImageSource, 0, 0, w, h);
   ctx.restore();
 
-  // VRAM temizliği
-  hlCanvas.width = 0;
-  hlCanvas.height = 0;
-  glowCanvas.width = 0;
-  glowCanvas.height = 0;
+  scatterCanvas.width = 0;
+  scatterCanvas.height = 0;
 }
 
 /**
@@ -758,17 +882,30 @@ export function applyBlackProMist(target: RenderTarget, intensity: number): void
 
   mCtx.imageSmoothingEnabled = true;
   mCtx.imageSmoothingQuality = 'high';
-
-  if ('filter' in mCtx) {
-    mCtx.filter = 'brightness(0.9) contrast(2.4)';
-  }
   mCtx.drawImage(target.canvas as CanvasImageSource, 0, 0, mistWidth, mistHeight);
+
+  // Yalnızca orta-yüksek ışıkları yumuşak H&D eğrisiyle izole et (sert CSS contrast patlaması olmadan)
+  const mData = mCtx.getImageData(0, 0, mistWidth, mistHeight);
+  const px = mData.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i] / 255;
+    const g = px[i + 1] / 255;
+    const b = px[i + 2] / 255;
+    const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const weight = Math.pow(Math.max(0, (luma - 0.25) / 0.75), 1.6);
+    // Omuz sönümlenmeli sis yoğunluğu
+    const softWeight = weight / (1.0 + weight * 0.45);
+    px[i] = Math.round(r * softWeight * 255);
+    px[i + 1] = Math.round(g * softWeight * 255);
+    px[i + 2] = Math.round(b * softWeight * 255);
+  }
+  mCtx.putImageData(mData, 0, 0);
 
   const blurPx = Math.max(6, Math.round(w * 0.016 * (intensity / 100)));
 
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = (intensity / 100) * 0.45;
+  ctx.globalAlpha = (intensity / 100) * 0.42;
   if ('filter' in ctx) {
     ctx.filter = `blur(${blurPx}px)`;
   }
@@ -780,29 +917,54 @@ export function applyBlackProMist(target: RenderTarget, intensity: number): void
 }
 
 /**
- * 🧪 Bleach Bypass (Gümüş Koruma): Düşük doygunluk, derin metalik gümüş kontrastı
+ * 🧪 Bleach Bypass (Gümüş Koruma): Ağartma banyosunun atlanmasıyla oluşan
+ * düşük doygunluk ve H&D omuz korumalı metalik gümüş yoğunluğu.
  */
 export function applyBleachBypass(target: RenderTarget, intensity: number): void {
   if (intensity <= 0) return;
 
   const { ctx, width: w, height: h } = target;
-  const alpha = (intensity / 100) * 0.6;
+  const strength = Math.min(1.0, Math.max(0, intensity / 100));
 
-  const bwCanvas = createCompatibleCanvas(w, h);
-  const bCtx = bwCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (!bCtx) return;
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
 
-  bCtx.filter = 'grayscale(100%) contrast(140%) brightness(105%)';
-  bCtx.drawImage(target.canvas as CanvasImageSource, 0, 0);
+  // 256 elemanlı gümüş tutma H&D omuz korumalı LUT
+  const silverCurve = new Float32Array(256);
+  for (let i = 0; i < 256; i++) {
+    const x = i / 255;
+    // S-eğrisi + yüksek ışıklarda yumuşak omuz sönümlenmesi (patlamayı önler)
+    const centered = x - 0.46;
+    const sig = 1.0 / (1.0 + Math.exp(-5.2 * centered));
+    const norm0 = 1.0 / (1.0 + Math.exp(-5.2 * -0.46));
+    const norm1 = 1.0 / (1.0 + Math.exp(-5.2 * 0.54));
+    const s = (sig - norm0) / (norm1 - norm0);
+    // Omuz koruma: açık tonları sertçe 1.0'a yapıştırmak yerine yumuşat
+    silverCurve[i] = x * 0.25 + s * 0.75;
+  }
 
-  ctx.save();
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = alpha;
-  ctx.drawImage(bwCanvas as CanvasImageSource, 0, 0);
-  ctx.restore();
+  const desatMix = strength * 0.58;
+  const contrastMix = strength * 0.65;
 
-  bwCanvas.width = 0;
-  bwCanvas.height = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+
+    const lumIdx = (r * 54 + g * 183 + b * 19) >> 8;
+    const silverVal = silverCurve[lumIdx] * 255;
+
+    // Renkten gümüş monokroma geçiş + metalik yoğunluk
+    const desatR = r + (lumIdx - r) * desatMix;
+    const desatG = g + (lumIdx - g) * desatMix;
+    const desatB = b + (lumIdx - b) * desatMix;
+
+    data[i] = Math.min(255, Math.max(0, Math.round(desatR + (silverVal - lumIdx) * contrastMix)));
+    data[i + 1] = Math.min(255, Math.max(0, Math.round(desatG + (silverVal - lumIdx) * contrastMix)));
+    data[i + 2] = Math.min(255, Math.max(0, Math.round(desatB + (silverVal - lumIdx) * contrastMix)));
+  }
+
+  ctx.putImageData(imgData, 0, 0);
 }
 
 /**

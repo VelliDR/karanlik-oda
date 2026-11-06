@@ -1,5 +1,6 @@
 import {
   AnyCanvas,
+  CubeLUT3D,
   ExportFormat,
   PresetDefinition,
   RenderTarget,
@@ -23,6 +24,9 @@ import {
   createCompatibleCanvas,
   createNoisePattern
 } from './optics';
+import { applySensitometryAndLUTCPU, setCustomCubeLUT } from './lut3d';
+import { ColorLutWebGPUEngine } from './webgpu/ColorLutWebGPUEngine';
+import { HeliosWebGPUEngine } from './webgpu/HeliosWebGPUEngine';
 import { AspectROI, generateSkinProtectionMask, projectDepthMapFromRaw } from './aspect-shield';
 import { inject300DpiAndExifToJpeg, inject300DpiToPng } from './metadata';
 
@@ -37,6 +41,7 @@ export interface WorkerExportPayload {
   depthBitmap?: ImageBitmap | null;
   rawDepth?: Float32Array | null;
   depthRoi?: AspectROI | null;
+  customLut?: CubeLUT3D | null;
 }
 
 export type WorkerMessageToMain =
@@ -55,7 +60,8 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     dpi = 300,
     depthBitmap,
     rawDepth,
-    depthRoi
+    depthRoi,
+    customLut
   } = e.data;
 
   try {
@@ -63,8 +69,18 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
       type: 'progress',
       step: 'init',
       percent: 15,
-      message: 'Tam çözünürlüklü tuval hazırlanıyor...'
+      message: 'Tam çözünürlüklü tuval ve 3D LUT motoru hazırlanıyor...'
     } as WorkerMessageToMain);
+
+    if (customLut) {
+      setCustomCubeLUT(customLut);
+    }
+
+    // Worker içinde WebGPU destekleniyorsa motorları hazırla
+    await Promise.all([
+      HeliosWebGPUEngine.getOrCreate(),
+      ColorLutWebGPUEngine.getOrCreate()
+    ]);
 
     const isTransposed = rotation === 90 || rotation === 270;
     const targetWidth = isTransposed ? imageBitmap.height : imageBitmap.width;
@@ -72,7 +88,6 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
 
     const offscreenCanvas = new OffscreenCanvas(targetWidth, targetHeight);
     const ctx = offscreenCanvas.getContext('2d');
-
 
     if (!ctx) {
       throw new Error('OffscreenCanvas 2D bağlamı oluşturulamadı.');
@@ -90,11 +105,21 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
       type: 'progress',
       step: 'pipeline',
       percent: 40,
-      message: 'Analog banyo ve optik kusurlar işleniyor...'
+      message: '3D LUT tetrahedral eşleme, H&D eğrisi ve optik kusurlar işleniyor...'
     } as WorkerMessageToMain);
 
     // Çekirdek pipeline'ı çalıştır
-    renderPipelineInWorker(target, imageBitmap, settings, rotation, noisePattern, depthBitmap, rawDepth, depthRoi);
+    renderPipelineInWorker(
+      target,
+      imageBitmap,
+      settings,
+      rotation,
+      noisePattern,
+      depthBitmap,
+      rawDepth,
+      depthRoi,
+      customLut
+    );
 
     self.postMessage({
       type: 'progress',
@@ -153,67 +178,25 @@ function renderPipelineInWorker(
   noisePattern: CanvasPattern | null,
   depthBitmap?: ImageBitmap | null,
   rawDepth?: Float32Array | null,
-  depthRoi?: AspectROI | null
+  depthRoi?: AspectROI | null,
+  customLut?: CubeLUT3D | null
 ): void {
   const { ctx, width: w, height: h } = target;
   ctx.clearRect(0, 0, w, h);
 
   const preset = PRESETS[settings.preset] || PRESETS.none;
+  const isCcd = settings.preset === 'ccd' || settings.preset === 'ccd_y2k';
 
-  const exp = 100 + settings.exposure;
-  const con = 100 + settings.contrast;
-  const sat = 100 + settings.saturation;
-
-  let filterString = `brightness(${exp}%) contrast(${con}%) saturate(${sat}%)`;
-  if (preset.filter !== 'none') {
-    filterString += ` ${preset.filter}`;
-  }
-
+  // 1. Ham Görsel Çizimi (Sıfır CSS filtresi)
   ctx.save();
-  ctx.filter = filterString;
-  drawImageWithRotationInWorker(target, sourceImg, rotation);
   ctx.filter = 'none';
+  drawImageWithRotationInWorker(target, sourceImg, rotation);
   ctx.restore();
 
-  // Renk Sıcaklığı (Warmth)
-  if (settings.warmth !== 0) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'color';
-    ctx.globalAlpha = Math.abs(settings.warmth) / 250;
-    ctx.fillStyle = settings.warmth > 0 ? '#ffb300' : '#00b3ff';
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
-  }
-
-  // Preset Renk Örtüsü (Overlay & Split-Toning)
-  if (preset.overlayColor && preset.overlayOpacity > 0) {
-    ctx.save();
-    ctx.globalCompositeOperation = preset.blendMode;
-    ctx.globalAlpha = preset.overlayOpacity;
-    ctx.fillStyle = preset.overlayColor;
-    ctx.fillRect(0, 0, w, h);
-    ctx.restore();
-  }
-
-  // Bleach Bypass (Gümüş Koruma Banyosu)
-  if (settings.bleachBypass > 0) {
-    applyBleachBypass(target, settings.bleachBypass);
-  }
-
-  // 🛡️ AKILLI EN-BOY ORANI KORUMALI TEN KALKANI (Skin Tone Protection Shield)
-  if (settings.skinProtection > 0) {
-    applySkinToneProtectionInWorker(target, sourceImg, rotation, settings, preset);
-  }
-
-  // Black Pro-Mist
-  if (settings.proMist > 0) {
-    applyBlackProMist(target, settings.proMist);
-  }
-
+  // 2. MERCEK OPTİĞİ
   // 🤖 3D Fiziksel Alan Derinliği & Helios 44M Swirl Optiği
   let fullDepthCanvas: AnyCanvas | null = null;
   if (settings.aiDepthEnabled) {
-    // 48 MP OOM çökmesini önlemek için derinlik tuvalini maksimum 1536px ile sınırla
     const maxDepthDim = 1536;
     const depthW = Math.min(w, maxDepthDim);
     const depthH = Math.max(1, Math.round((h * depthW) / w));
@@ -258,35 +241,55 @@ function renderPipelineInWorker(
     applyChromaticAberration(target, settings.chromatic);
   }
 
-  // CCD Estetiği veya Klasik Analog Film Banyo Zinciri
-  const isCcd = settings.preset === 'ccd' || settings.preset === 'ccd_y2k';
+  // Black Pro-Mist
+  if (settings.proMist > 0) {
+    applyBlackProMist(target, settings.proMist);
+  }
+
+  // Mekanik Vinyet
+  if (settings.vignette > 0) {
+    applyVignette(target, settings.vignette);
+  }
+
+  // 3. FİLM EMÜLSİYONU: 650nm Spektral Halasyon + H&D Sensitometri & Omuz Sıkıştırması + 3D LUT Tetrahedral Enterpolasyon
+  const colorGpuEngine = ColorLutWebGPUEngine.getInstanceSync();
+  let gpuColorApplied = false;
+
+  if (colorGpuEngine) {
+    gpuColorApplied = colorGpuEngine.renderToTarget(target, settings, customLut);
+  }
+
+  if (!gpuColorApplied) {
+    if (!isCcd && settings.halation > 0) {
+      applyHalation(target, settings.halation);
+    }
+    applySensitometryAndLUTCPU(target, settings, customLut);
+  }
+
+  // 4. KİMYASAL BANYO & KORUMA KALKANLARI
+  // Bleach Bypass
+  if (settings.bleachBypass > 0) {
+    applyBleachBypass(target, settings.bleachBypass);
+  }
+
+  // 🛡️ AKILLI EN-BOY ORANI KORUMALI TEN KALKANI
+  if (settings.skinProtection > 0) {
+    applySkinToneProtectionInWorker(target, sourceImg, rotation, settings, preset);
+  }
+
+  // 5. CCD Sensör Kusurları veya Analog Film Sızıntı & Gren Katmanı
   if (isCcd) {
     if (settings.lightLeak > 0) {
       applyLightLeak(target, settings.lightLeak);
     }
     applyCcdAesthetic(target, { mode: settings.preset as 'ccd' | 'ccd_y2k' });
-
-    if (settings.vignette > 0) {
-      applyVignette(target, settings.vignette);
-    }
-    // CCD presetlerinde analog film greni ve halasyon tamamen atlanır (Bypass Kuralı)
   } else {
-    // CineStill 800T Çift Loblu Halasyon
-    if (settings.preset === 'cinestill') {
-      applyHalation(target);
-    }
-
     // Light Leak
     if (settings.lightLeak > 0) {
       applyLightLeak(target, settings.lightLeak);
     }
 
-    // Mekanik Vinyet: Optik kusur olduğu için daima grenden ÖNCE uygulanmalıdır
-    if (settings.vignette > 0) {
-      applyVignette(target, settings.vignette);
-    }
-
-    // 35mm Analog Film Greni: Çerçeve ve tarih damgasından önceki mutlak son katman
+    // 35mm Analog Film Greni
     const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
     if (activeNoise > 0 && noisePattern) {
       applyFilmGrain(target, noisePattern, activeNoise);
@@ -302,7 +305,6 @@ function renderPipelineInWorker(
   if (settings.quartzDate) {
     applyQuartzDate(target, settings.quartzDate, settings.quartzDateText);
   }
-
 }
 
 function drawImageWithRotationInWorker(
@@ -332,7 +334,6 @@ function applySkinToneProtectionInWorker(
   const skinMask = generateSkinProtectionMask(sourceImg, w, h, rotation, 512);
   if (!skinMask) return;
 
-  const exp = 100 + settings.exposure;
   const cleanSkinCanvas = createCompatibleCanvas(w, h);
   const sCtx = cleanSkinCanvas.getContext('2d') as OffscreenCanvasRenderingContext2D | null;
   if (!sCtx) {
@@ -341,16 +342,31 @@ function applySkinToneProtectionInWorker(
     return;
   }
 
-  const skinFilter =
-    preset.id === 'sb'
-      ? `grayscale(100%) brightness(${exp}%) contrast(${Math.round(100 + settings.contrast * 0.35)}%)`
-      : `brightness(${exp}%) contrast(${Math.round(100 + settings.contrast * 0.35)}%) saturate(${Math.max(90, Math.min(115, 100 + settings.saturation * 0.35))}%)`;
+  const skinTarget: RenderTarget = {
+    canvas: cleanSkinCanvas,
+    ctx: sCtx,
+    width: w,
+    height: h
+  };
 
-  sCtx.save();
-  sCtx.filter = skinFilter;
-  drawImageWithRotationInWorker({ ctx: sCtx, width: w, height: h, canvas: cleanSkinCanvas }, sourceImg, rotation);
-  sCtx.filter = 'none';
-  sCtx.restore();
+  drawImageWithRotationInWorker(skinTarget, sourceImg, rotation);
+
+  const isMono = preset.id === 'sb' || preset.id === 'hp5';
+  const skinSettings: SliderSettings = {
+    ...settings,
+    preset: isMono ? 'hp5' : 'analog',
+    contrast: Math.round(settings.contrast * 0.35),
+    shoulder: Math.max(65, settings.shoulder ?? 55),
+    saturation: isMono ? 0 : Math.max(-10, Math.min(12, Math.round(settings.saturation * 0.35))),
+    warmth: isMono ? 0 : Math.max(0, Math.min(18, Math.round(settings.warmth * 0.45))),
+    halation: 0
+  };
+
+  const colorGpuEngine = ColorLutWebGPUEngine.getInstanceSync();
+  const gpuOk = colorGpuEngine ? colorGpuEngine.renderToTarget(skinTarget, skinSettings, null) : false;
+  if (!gpuOk) {
+    applySensitometryAndLUTCPU(skinTarget, skinSettings, null);
+  }
 
   // Maskeyi uygulayarak yalnızca ten alanlarını izole et
   sCtx.globalCompositeOperation = 'destination-in';
@@ -367,3 +383,4 @@ function applySkinToneProtectionInWorker(
   skinMask.width = 0;
   skinMask.height = 0;
 }
+

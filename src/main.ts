@@ -69,9 +69,11 @@ type NumericSliderKey = keyof Omit<
 const sliders: Record<NumericSliderKey, HTMLInputElement> = {
   exposure: document.getElementById('slider-exposure') as HTMLInputElement,
   contrast: document.getElementById('slider-contrast') as HTMLInputElement,
+  shoulder: document.getElementById('slider-shoulder') as HTMLInputElement,
   saturation: document.getElementById('slider-saturation') as HTMLInputElement,
   warmth: document.getElementById('slider-warmth') as HTMLInputElement,
   skinProtection: document.getElementById('slider-skinProtection') as HTMLInputElement,
+  halation: document.getElementById('slider-halation') as HTMLInputElement,
   grain: document.getElementById('slider-grain') as HTMLInputElement,
   lightLeak: document.getElementById('slider-lightLeak') as HTMLInputElement,
   bleachBypass: document.getElementById('slider-bleachBypass') as HTMLInputElement,
@@ -81,6 +83,11 @@ const sliders: Record<NumericSliderKey, HTMLInputElement> = {
   chromatic: document.getElementById('slider-chromatic') as HTMLInputElement,
   vignette: document.getElementById('slider-vignette') as HTMLInputElement
 };
+
+// 🧊 Harici .CUBE 3D LUT Yükleyici Elemanları
+const btnLoadCubeLut = document.getElementById('btn-load-cube-lut') as HTMLButtonElement | null;
+const cubeLutInput = document.getElementById('cube-lut-input') as HTMLInputElement | null;
+let hasCustomLutLoaded = false;
 
 // 🤖 AI Depth Anything Kontrol Elemanları
 const checkAiDepth = document.getElementById('check-aiDepth') as HTMLInputElement;
@@ -145,6 +152,8 @@ function setupDeckTabs(): void {
 function setupPresetsUI(): void {
   presetsContainer.innerHTML = '';
   Object.values(PRESETS).forEach((preset) => {
+    if (preset.id === 'custom_lut' && !hasCustomLutLoaded) return;
+
     const btn = document.createElement('button');
     btn.setAttribute('data-preset', preset.id);
     const isActive = editor.settings.preset === preset.id;
@@ -162,7 +171,13 @@ function setupPresetsUI(): void {
 
     btn.addEventListener('click', () => {
       editor.settings.preset = preset.id;
-      updatePresetSelectionUI();
+      if (typeof preset.defaultShoulder === 'number') {
+        editor.settings.shoulder = preset.defaultShoulder;
+      }
+      if (typeof preset.defaultHalation === 'number') {
+        editor.settings.halation = preset.defaultHalation;
+      }
+      syncAllControlsUI();
       editor.scheduleRender();
       history.push(editor.getSnapshot());
       updateHistoryButtons();
@@ -607,11 +622,41 @@ btnSmartRecipeApply.addEventListener('click', () => {
   showToast(`✨ ${currentSmartSuggestion.presetName} Reçetesi ve Optik Ayarları Uygulandı!`, 'info', 3000);
 });
 
+// 🧊 .CUBE 3D LUT Dosyası Yükleme (33x33x33 / 65x65x65 Tetrahedral LUT)
+btnLoadCubeLut?.addEventListener('click', () => {
+  cubeLutInput?.click();
+});
+
+cubeLutInput?.addEventListener('change', async () => {
+  const file = cubeLutInput.files?.[0];
+  if (!file) return;
+
+  try {
+    const text = await file.text();
+    const lut = editor.loadCustomCubeLUT(text, file.name);
+    hasCustomLutLoaded = true;
+    setupPresetsUI();
+    syncAllControlsUI();
+    if (editor.hasImage) {
+      history.push(editor.getSnapshot());
+      updateHistoryButtons();
+    }
+    showToast(`🧊 3D LUT yüklendi: ${lut.title} (${lut.size}×${lut.size}×${lut.size} Tetrahedral)`, 'info', 3500);
+  } catch (err) {
+    console.error(err);
+    showToast(err instanceof Error ? err.message : '.CUBE dosyası okunamadı.', 'error', 4000);
+  } finally {
+    cubeLutInput.value = '';
+  }
+});
+
 // 🎲 Kör Makara (Analog Serendipity / Rastgele Banyo)
 btnRandomize.addEventListener('click', () => {
   if (!editor.hasImage) return;
 
-  const presetKeys = Object.keys(PRESETS) as PresetKey[];
+  const presetKeys = (Object.keys(PRESETS) as PresetKey[]).filter(
+    (k) => k !== 'custom_lut' || hasCustomLutLoaded
+  );
   const randomPreset = presetKeys[Math.floor(Math.random() * presetKeys.length)];
 
   editor.settings = {
@@ -620,9 +665,11 @@ btnRandomize.addEventListener('click', () => {
     aiShowDepthMap: false,
     exposure: Math.floor(Math.random() * 25) - 10,
     contrast: Math.floor(Math.random() * 30) - 10,
+    shoulder: Math.floor(Math.random() * 35) + 50,
     saturation: Math.floor(Math.random() * 30) - 15,
     warmth: Math.floor(Math.random() * 50) - 20,
     grain: Math.floor(Math.random() * 45) + 10,
+    halation: Math.random() > 0.35 ? Math.floor(Math.random() * 45) + 15 : 0,
     lightLeak: Math.random() > 0.4 ? Math.floor(Math.random() * 40) + 15 : 0,
     bleachBypass: Math.random() > 0.6 ? Math.floor(Math.random() * 35) : 0,
     swirl: Math.random() > 0.5 ? Math.floor(Math.random() * 45) + 10 : 0,
