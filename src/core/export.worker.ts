@@ -12,6 +12,7 @@ import {
   applyBleachBypass,
   applyCcdAesthetic,
   applyChromaticAberration,
+  applyDepthOfField,
   applyFilmBorder,
   applyFilmGrain,
   applyHalation,
@@ -209,27 +210,35 @@ function renderPipelineInWorker(
     applyBlackProMist(target, settings.proMist);
   }
 
-  // Helios 44M Swirl Bokeh (Kedi Gözü & 3D Derinlik Kalkanı)
-  if (settings.swirl > 0) {
-    let fullDepthCanvas: AnyCanvas | null = null;
-    if (settings.aiDepthEnabled) {
-      // 48 MP OOM çökmesini önlemek için derinlik tuvalini maksimum 1536px ile sınırla
-      const maxDepthDim = 1536;
-      const depthW = Math.min(w, maxDepthDim);
-      const depthH = Math.max(1, Math.round((h * depthW) / w));
+  // 🤖 3D Fiziksel Alan Derinliği & Helios 44M Swirl Optiği
+  let fullDepthCanvas: AnyCanvas | null = null;
+  if (settings.aiDepthEnabled) {
+    // 48 MP OOM çökmesini önlemek için derinlik tuvalini maksimum 1536px ile sınırla
+    const maxDepthDim = 1536;
+    const depthW = Math.min(w, maxDepthDim);
+    const depthH = Math.max(1, Math.round((h * depthW) / w));
 
-      if (depthBitmap) {
-        fullDepthCanvas = new OffscreenCanvas(depthW, depthH);
-        const dCtx = fullDepthCanvas.getContext('2d');
-        if (dCtx) {
-          dCtx.imageSmoothingEnabled = true;
-          dCtx.imageSmoothingQuality = 'high';
-          dCtx.drawImage(depthBitmap, 0, 0, depthW, depthH);
-        }
-      } else if (rawDepth && depthRoi) {
-        fullDepthCanvas = projectDepthMapFromRaw(rawDepth, depthRoi, depthW, depthH);
+    if (depthBitmap) {
+      fullDepthCanvas = new OffscreenCanvas(depthW, depthH);
+      const dCtx = fullDepthCanvas.getContext('2d');
+      if (dCtx) {
+        dCtx.imageSmoothingEnabled = true;
+        dCtx.imageSmoothingQuality = 'high';
+        dCtx.drawImage(depthBitmap, 0, 0, depthW, depthH);
       }
+    } else if (rawDepth && depthRoi) {
+      fullDepthCanvas = projectDepthMapFromRaw(rawDepth, depthRoi, depthW, depthH);
     }
+  }
+
+  if (settings.aiDepthEnabled && fullDepthCanvas && settings.swirl === 0) {
+    applyDepthOfField(
+      target,
+      fullDepthCanvas,
+      settings.aiFocalDepth,
+      settings.aiDepthAperture
+    );
+  } else if (settings.swirl > 0) {
     applySwirlyBokeh(
       target,
       settings.swirl,
@@ -237,10 +246,11 @@ function renderPipelineInWorker(
       settings.aiFocalDepth,
       settings.aiDepthAperture
     );
-    if (fullDepthCanvas) {
-      fullDepthCanvas.width = 0;
-      fullDepthCanvas.height = 0;
-    }
+  }
+
+  if (fullDepthCanvas) {
+    fullDepthCanvas.width = 0;
+    fullDepthCanvas.height = 0;
   }
 
   // Chromatic Aberration

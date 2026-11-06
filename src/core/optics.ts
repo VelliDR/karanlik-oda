@@ -168,10 +168,62 @@ export function generateDepthOfFieldMask(
 }
 
 /**
+ * 🤖 3D Fiziksel Alan Derinliği (DoF) Bulanıklık Motoru.
+ * Odak dışındaki (arka plan ve ön plan) alanlara fiziksel diyafram toleransına göre
+ * yumuşak, kremamsı optik bokeh uygular; odak noktasındaki özneyi iğne ucu kadar keskin tutar.
+ */
+export function applyDepthOfField(
+  target: RenderTarget,
+  depthMask: AnyCanvas,
+  focalDepth: number = 0.5,
+  aperture: number = 50
+): void {
+  // aperture 0 = f/16 (tüm sahne net, DoF etkisi sıfır)
+  if (aperture <= 0) return;
+
+  const { ctx, width: w, height: h } = target;
+  const dofMask = generateDepthOfFieldMask(depthMask, w, h, focalDepth, aperture);
+
+  const workCanvas = createCompatibleCanvas(w, h);
+  const wCtx = workCanvas.getContext('2d') as AnyRenderingContext2D | null;
+  if (!wCtx) {
+    dofMask.width = 0;
+    dofMask.height = 0;
+    return;
+  }
+
+  // Fiziksel lens CoC (Circle of Confusion) bulanıklığı
+  const maxBlurPx = Math.max(3, Math.round(Math.min(w, h) * 0.022 * (aperture / 100)));
+
+  wCtx.save();
+  if ('filter' in wCtx) {
+    wCtx.filter = `blur(${maxBlurPx}px)`;
+  }
+  wCtx.drawImage(target.canvas as CanvasImageSource, 0, 0);
+  wCtx.restore();
+
+  // Odak dışı maskesini uygula (Odaklanan nesne = alpha 0, arka/ön plan = alpha > 0)
+  wCtx.globalCompositeOperation = 'destination-in';
+  wCtx.drawImage(dofMask as CanvasImageSource, 0, 0);
+
+  // Hedef tuvale pürüzsüzce mühürle
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(workCanvas as CanvasImageSource, 0, 0);
+  ctx.restore();
+
+  // VRAM temizliği
+  dofMask.width = 0;
+  dofMask.height = 0;
+  workCanvas.width = 0;
+  workCanvas.height = 0;
+}
+
+/**
  * 🌀 Helios 44M-4 Merceğinin Kedi Gözü (Cat-Eye) ve Teğetsel Dönen Bokeh (Swirl) Optiği.
  * WebGPU donanım hızlandırması mevcutsa GPU shader ile sıfır vertex buffer tekniğiyle çalıştırır;
- * aksi takdirde tek çalışma tuvali, screen harmanlama ve doğrudan destination-in ile 
- * VRAM sızıntısız 2D yedek motoru işletir.
+ * aksi takdirde tek çalışma tuvali, source-over koşu ortalaması (running average) ve
+ * doğrudan destination-in ile %100 parlaklık korumalı, beyaz halkasız 2D yedek motoru işletir.
  */
 export function applySwirlyBokeh(
   target: RenderTarget,
@@ -198,8 +250,7 @@ export function applySwirlyBokeh(
     if (success) return;
   }
 
-  // 2. Optimize Canvas 2D Fallback:
-  // 3 ayrı tuval yerine tek çalışma tuvali, screen harmanlama ve doğrudan destination-in ile eliptik deformasyon.
+  // 2. Optimize, Sıfır Beyaz Halka & VRAM Korumalı 2D Motor:
   const { ctx, width: w, height: h } = target;
   const cx = w / 2;
   const cy = h / 2;
@@ -211,42 +262,52 @@ export function applySwirlyBokeh(
   const wCtx = workCanvas.getContext('2d') as AnyRenderingContext2D | null;
   if (!wCtx) return;
 
+  // Teğetsel eliptik kayma parametreleri
+  const steps = 4;
+  const maxAngle = (intensity / 100) * (w > 2000 ? 3.0 : 2.2);
+  const stretch = (intensity / 100) * 0.055;
+
+  // 1. Temel katman (Orijinal görsel)
   wCtx.drawImage(target.canvas as CanvasImageSource, 0, 0);
 
-  // Kedi gözü astigmatizmi & teğetsel eliptik deformasyon
-  // Global ctx.rotate afine hilesi yerine teğetsel eksenli eliptik genleşme & screen harmanlama
-  const steps = 4;
-  const stretch = (intensity / 100) * 0.045;
-  const offsetBase = (intensity / 100) * (minDim * 0.012);
-
-  wCtx.globalCompositeOperation = 'screen';
-  wCtx.globalAlpha = 0.22;
-
+  // 2. Çoklu açısal teğetsel & eliptik bükülme (Running Average ile %100 Parlaklık Koruması)
+  // 'screen' harmanlama KULLANILMAZ! Screen modu pikselleri bembeyaz yakıp beyaz viynete yol açar.
+  // Bunun yerine her örnek katmanı source-over ve 1/(k+1) normalizasyonuyla üst üste harmanlanır.
+  let sampleCount = 1;
   for (let i = 1; i <= steps; i++) {
     const factor = i / steps;
+    const angle = factor * maxAngle * (Math.PI / 180);
     const sX = 1.0 + factor * stretch;
-    const sY = Math.max(0.75, 1.0 - factor * stretch);
-    const off = factor * offsetBase;
+    const sY = Math.max(0.72, 1.0 - factor * stretch);
 
-    // Teğetsel eliptik kaydırmalar
+    // Pozitif açısal kayma
+    sampleCount++;
+    wCtx.globalAlpha = 1.0 / sampleCount;
     wCtx.save();
     wCtx.translate(cx, cy);
+    wCtx.rotate(angle);
     wCtx.scale(sX, sY);
-    wCtx.drawImage(target.canvas as CanvasImageSource, -cx + off, -cy);
-    wCtx.drawImage(target.canvas as CanvasImageSource, -cx - off, -cy);
+    wCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy);
     wCtx.restore();
 
+    // Negatif açısal kayma
+    sampleCount++;
+    wCtx.globalAlpha = 1.0 / sampleCount;
     wCtx.save();
     wCtx.translate(cx, cy);
+    wCtx.rotate(-angle);
     wCtx.scale(sY, sX);
-    wCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy + off);
-    wCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy - off);
+    wCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy);
     wCtx.restore();
   }
 
-  // Doğrudan destination-in ile odak kalkanı / radyal maskeleme (ara blend tuvalsiz)
-  wCtx.globalCompositeOperation = 'destination-in';
+  // Opaklığı normale döndür
   wCtx.globalAlpha = 1.0;
+
+  // 3. Odak Kalkanı / Maskeleme
+  // 3D Derinlik haritası varsa fiziksel DoF maskesini kullan;
+  // yoksa optik alan eğriliği (Field Curvature: merkez keskin, kenarlar dönen) radyal maskesini kullan.
+  wCtx.globalCompositeOperation = 'destination-in';
 
   if (depthMask) {
     const dofMask = generateDepthOfFieldMask(depthMask, w, h, focalDepth, aperture);
@@ -257,22 +318,23 @@ export function applySwirlyBokeh(
     const grad = wCtx.createRadialGradient(
       cx,
       cy,
-      centerRadius * 0.5,
+      centerRadius * 0.45,
       cx,
       cy,
-      maxRadius * 0.85
+      maxRadius * 0.88
     );
-    grad.addColorStop(0, 'rgba(0,0,0,0)');
-    grad.addColorStop(0.35, 'rgba(0,0,0,0.08)');
-    grad.addColorStop(0.7, 'rgba(0,0,0,0.75)');
-    grad.addColorStop(1, 'rgba(0,0,0,1.0)');
+    grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    grad.addColorStop(0.35, 'rgba(0, 0, 0, 0.08)');
+    grad.addColorStop(0.7, 'rgba(0, 0, 0, 0.75)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 1.0)');
 
     wCtx.fillStyle = grad;
     wCtx.fillRect(0, 0, w, h);
   }
 
-  // Hedef tuvale birleştir
+  // 4. Hedef tuvale pürüzsüzce mühürle
   ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(workCanvas as CanvasImageSource, 0, 0);
   ctx.restore();
 
@@ -487,12 +549,14 @@ export function applyChromaticAberration(target: RenderTarget, intensity: number
   const cy = h / 2;
   const maxRadius = Math.hypot(cx, cy);
 
-  // Ayrışma katsayısı: merkezde 0, kenarlarda radyal artış
-  const factor = (intensity / 100) * 0.015;
-  const redScale = 1 + factor;
-  const blueScale = Math.max(0.985, 1 - factor);
+  // Ayrışma katsayısı: merkez optik eksende 0, kenarlara doğru radyal kedi gözü prizma sapması
+  const factor = (intensity / 100) * 0.014;
+  if (factor <= 0) return;
 
-  // Kırmızı kanal tuvali (Dışa doğru hafifçe genleşir)
+  const redScale = 1.0 + factor;
+  const cyanScale = Math.max(0.986, 1.0 - factor);
+
+  // Kırmızı kanal tuvali (dışa genleşmiş)
   const redCanvas = createCompatibleCanvas(w, h);
   const rCtx = redCanvas.getContext('2d') as AnyRenderingContext2D | null;
   if (!rCtx) return;
@@ -507,7 +571,7 @@ export function applyChromaticAberration(target: RenderTarget, intensity: number
   rCtx.fillStyle = '#ff0000';
   rCtx.fillRect(0, 0, w, h);
 
-  // Cyan kanal tuvali (İçe doğru hafifçe küçülür)
+  // Cyan kanal tuvali (içe büzülmüş)
   const cyanCanvas = createCompatibleCanvas(w, h);
   const cCtx = cyanCanvas.getContext('2d') as AnyRenderingContext2D | null;
   if (!cCtx) {
@@ -518,7 +582,7 @@ export function applyChromaticAberration(target: RenderTarget, intensity: number
 
   cCtx.save();
   cCtx.translate(cx, cy);
-  cCtx.scale(blueScale, blueScale);
+  cCtx.scale(cyanScale, cyanScale);
   cCtx.drawImage(target.canvas as CanvasImageSource, -cx, -cy);
   cCtx.restore();
 
@@ -526,59 +590,41 @@ export function applyChromaticAberration(target: RenderTarget, intensity: number
   cCtx.fillStyle = '#00ffff';
   cCtx.fillRect(0, 0, w, h);
 
-  // İki kanalı birleştir (Merkezde üst üste biner, tam beyaz/orijinal renk kalır)
-  const caCanvas = createCompatibleCanvas(w, h);
-  const caCtx = caCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (!caCtx) {
-    redCanvas.width = 0;
-    redCanvas.height = 0;
-    cyanCanvas.width = 0;
-    cyanCanvas.height = 0;
-    return;
-  }
+  // Kırmızı tuval üzerinde iki kanalı screen ile birleştir
+  rCtx.globalCompositeOperation = 'screen';
+  rCtx.drawImage(cyanCanvas as CanvasImageSource, 0, 0);
 
-  caCtx.drawImage(redCanvas as CanvasImageSource, 0, 0);
-  caCtx.globalCompositeOperation = 'screen';
-  caCtx.drawImage(cyanCanvas as CanvasImageSource, 0, 0);
-
-  // Merkez netliğini %100 koruyan radyal maske (Merkez çemberinde CA = 0)
-  const maskCanvas = createCompatibleCanvas(w, h);
-  const mCtx = maskCanvas.getContext('2d') as AnyRenderingContext2D | null;
-  if (mCtx) {
-    const grad = mCtx.createRadialGradient(
-      cx,
-      cy,
-      maxRadius * 0.25, // İç %25 bölge kesinlikle sıfır sapma
-      cx,
-      cy,
-      maxRadius * 0.95
-    );
-    grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    grad.addColorStop(0.35, 'rgba(0, 0, 0, 0.05)');
-    grad.addColorStop(0.75, 'rgba(0, 0, 0, 0.65)');
-    grad.addColorStop(1, 'rgba(0, 0, 0, 1.0)');
-
-    mCtx.fillStyle = grad;
-    mCtx.fillRect(0, 0, w, h);
-
-    caCtx.globalCompositeOperation = 'destination-in';
-    caCtx.drawImage(maskCanvas as CanvasImageSource, 0, 0);
-
-    maskCanvas.width = 0;
-    maskCanvas.height = 0;
-  }
-
-  ctx.save();
-  ctx.drawImage(caCanvas as CanvasImageSource, 0, 0);
-  ctx.restore();
-
-  // VRAM temizliği
-  redCanvas.width = 0;
-  redCanvas.height = 0;
   cyanCanvas.width = 0;
   cyanCanvas.height = 0;
-  caCanvas.width = 0;
-  caCanvas.height = 0;
+
+  // Merkez netliğini %100 koruyan radyal maske (Merkez çemberinde CA = 0)
+  // Dış sınırda sert kenar kesilmesi olmaması için gradyan kenara doğru yumuşatılır
+  const grad = rCtx.createRadialGradient(
+    cx,
+    cy,
+    maxRadius * 0.25,
+    cx,
+    cy,
+    maxRadius * 0.95
+  );
+  grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  grad.addColorStop(0.35, 'rgba(0, 0, 0, 0.05)');
+  grad.addColorStop(0.75, 'rgba(0, 0, 0, 0.7)');
+  grad.addColorStop(0.92, 'rgba(0, 0, 0, 0.95)');
+  grad.addColorStop(1.0, 'rgba(0, 0, 0, 0.5)'); // Kenarda tek kanal kalıntısını önle
+
+  rCtx.globalCompositeOperation = 'destination-in';
+  rCtx.fillStyle = grad;
+  rCtx.fillRect(0, 0, w, h);
+
+  // Hedefe mühürle
+  ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.drawImage(redCanvas as CanvasImageSource, 0, 0);
+  ctx.restore();
+
+  redCanvas.width = 0;
+  redCanvas.height = 0;
 }
 
 /**
@@ -702,22 +748,30 @@ export function applyBlackProMist(target: RenderTarget, intensity: number): void
 
   const { ctx, width: w, height: h } = target;
 
-  const mistWidth = Math.min(w, 1600);
-  const mistHeight = Math.round((h * mistWidth) / w);
+  // Donanım hızlandırmalı difüzyon: 384px ara tuval bilinear filtreleme ile
+  // ctx.filter desteklenmeyen tarayıcılarda bile yumuşak rüya parlaklığı sağlar
+  const mistWidth = Math.min(384, Math.max(128, Math.round(w * 0.25)));
+  const mistHeight = Math.max(1, Math.round((h * mistWidth) / w));
   const mistCanvas = createCompatibleCanvas(mistWidth, mistHeight);
   const mCtx = mistCanvas.getContext('2d') as AnyRenderingContext2D | null;
   if (!mCtx) return;
 
-  // Sadece orta ve yüksek ışıkları izole et, derin gölgeleri keserek kontrastı koru
-  mCtx.filter = 'brightness(0.85) contrast(2.2)';
+  mCtx.imageSmoothingEnabled = true;
+  mCtx.imageSmoothingQuality = 'high';
+
+  if ('filter' in mCtx) {
+    mCtx.filter = 'brightness(0.9) contrast(2.4)';
+  }
   mCtx.drawImage(target.canvas as CanvasImageSource, 0, 0, mistWidth, mistHeight);
 
-  const blurPx = Math.max(8, Math.round(w * 0.018 * (intensity / 100)));
+  const blurPx = Math.max(6, Math.round(w * 0.016 * (intensity / 100)));
 
   ctx.save();
   ctx.globalCompositeOperation = 'screen';
-  ctx.globalAlpha = (intensity / 100) * 0.42;
-  ctx.filter = `blur(${blurPx}px)`;
+  ctx.globalAlpha = (intensity / 100) * 0.45;
+  if ('filter' in ctx) {
+    ctx.filter = `blur(${blurPx}px)`;
+  }
   ctx.drawImage(mistCanvas as CanvasImageSource, 0, 0, w, h);
   ctx.restore();
 
@@ -847,6 +901,7 @@ export function applyVignette(target: RenderTarget, intensity: number): void {
 
   const { ctx, width: w, height: h } = target;
   ctx.save();
+  ctx.globalCompositeOperation = 'source-over';
   const radius = Math.hypot(w, h) * 0.58;
   const grad = ctx.createRadialGradient(
     w / 2,

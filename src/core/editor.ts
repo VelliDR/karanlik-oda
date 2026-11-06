@@ -13,6 +13,7 @@ import {
   applyBleachBypass,
   applyCcdAesthetic,
   applyChromaticAberration,
+  applyDepthOfField,
   applyFilmBorder,
   applyFilmGrain,
   applyHalation,
@@ -790,8 +791,15 @@ export class PhotoEditor {
       applyBlackProMist(target, settings.proMist);
     }
 
-    // Helios 44M Swirl Bokeh (Kedi Gözü & 3D Derinlik Koruması)
-    if (settings.swirl > 0) {
+    // 🤖 3D Fiziksel Alan Derinliği & Helios 44M Swirl Optiği
+    if (settings.aiDepthEnabled && this.depthCanvas && settings.swirl === 0) {
+      applyDepthOfField(
+        target,
+        this.depthCanvas,
+        settings.aiFocalDepth,
+        settings.aiDepthAperture
+      );
+    } else if (settings.swirl > 0) {
       applySwirlyBokeh(
         target,
         settings.swirl,

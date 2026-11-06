@@ -205,7 +205,7 @@ export class HeliosWebGPUEngine {
     this.gpuContext.configure({
       device: this.device,
       format: this.presentationFormat,
-      alphaMode: 'premultiplied'
+      alphaMode: 'opaque'
     });
   }
 
@@ -278,7 +278,7 @@ export class HeliosWebGPUEngine {
         this.gpuContext.configure({
           device: this.device,
           format: this.presentationFormat,
-          alphaMode: 'premultiplied'
+          alphaMode: 'opaque'
         });
       }
 
@@ -381,6 +381,7 @@ export class HeliosWebGPUEngine {
 
       // 6. Sonucu 2D tuvale blit et
       ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.gpuCanvas as CanvasImageSource, 0, 0);
       ctx.restore();
 
