@@ -579,3 +579,126 @@ export function EraserIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: Icon
     </svg>
   );
 }
+
+/** 35mm Çoklu Kare Film Şeridi Simgesi */
+export function FilmStripIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <rect x="2" y="5" width="20" height="14" rx="2" />
+      <path d="M9 8v8M15 8v8" />
+      <path d="M5 5v2M9 5v2M15 5v2M19 5v2" />
+      <path d="M5 17v2M9 17v2M15 17v2M19 17v2" />
+    </svg>
+  );
+}
+
+/** Karanlık Oda Kontakt Baskı Sayfası Simgesi */
+export function ContactSheetIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <rect x="6" y="6.5" width="5" height="4" rx="0.5" />
+      <rect x="13" y="6.5" width="5" height="4" rx="0.5" />
+      <rect x="6" y="13.5" width="5" height="4" rx="0.5" />
+      <rect x="13" y="13.5" width="5" height="4" rx="0.5" />
+    </svg>
+  );
+}
+
+/** Artı / Kare Ekle Simgesi */
+export function PlusIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <path d="M12 5v14M5 12h14" />
+    </svg>
+  );
+}
+
+/** Kapat / Kare Çıkar Simgesi */
+export function CloseIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <path d="M18 6 6 18M6 6l12 12" />
+    </svg>
+  );
+}
+
+/** Sürükle-Bırak Tutamaç Simgesi */
+export function GripIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      class={className}
+    >
+      <circle cx="9" cy="6" r="1.5" />
+      <circle cx="15" cy="6" r="1.5" />
+      <circle cx="9" cy="12" r="1.5" />
+      <circle cx="15" cy="12" r="1.5" />
+      <circle cx="9" cy="18" r="1.5" />
+      <circle cx="15" cy="18" r="1.5" />
+    </svg>
+  );
+}
+
+/** Karanlık Oda Mumlu Seçim Kalemi (Chinagraph) Simgesi */
+export function PencilMarkIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </svg>
+  );
+}

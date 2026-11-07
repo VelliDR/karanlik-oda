@@ -9,8 +9,11 @@ import {
   redo,
   resetSettings,
   rotateImage,
-  randomizeSettings
+  randomizeSettings,
+  workspaceMode,
+  stripFrames
 } from '../store';
+import { STRIP_MIN_FRAMES } from '../../core/strip/constants';
 import {
   CameraIcon,
   FolderIcon,
@@ -33,6 +36,9 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
   const isRawFile = isRaw.value;
   const raw = rawMetadata.value;
   const dims = imageDimensions.value;
+  const isStripMode = workspaceMode.value === 'strip';
+  const stripCount = stripFrames.value.length;
+  const canSave = isStripMode ? stripCount >= STRIP_MIN_FRAMES : hasImg;
 
   return (
     <header class="p-2.5 sm:px-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/90 backdrop-blur sticky top-0 z-30">
@@ -51,7 +57,11 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
             </span>
           </div>
           <p class="text-[9px] text-neutral-400 font-mono hidden xs:block">
-            {isRawFile && raw ? (
+            {isStripMode ? (
+              <span class="text-amber-300 font-semibold">
+                {stripCount} / 6 Kare • ISO 1007 35mm Vektör Şerit & Kontakt Baskı
+              </span>
+            ) : isRawFile && raw ? (
               <span class="text-amber-300 font-semibold flex items-center gap-1">
                 <CameraIcon class="w-3 h-3 inline" /> {raw.make} {raw.model} • ISO {raw.iso} • {raw.shutter}s • f/{raw.aperture.toFixed(1)}
               </span>
@@ -66,20 +76,20 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
 
       {/* Action Toolbar */}
       <div class="flex items-center gap-1.5">
-        {/* Fotoğraf Yükle Butonu */}
+        {/* Fotoğraf / Kare Ekle Butonu */}
         <button
           type="button"
           onClick={onOpenFileSelect}
           class="bg-amber-950/70 hover:bg-amber-900/60 text-amber-300 border border-amber-600/40 py-1.5 px-2.5 rounded-xl text-xs font-mono font-semibold tracking-wider transition-colors flex items-center gap-1.5 cursor-pointer"
         >
           <FolderIcon class="w-3.5 h-3.5" />
-          <span class="hidden sm:inline">Fotoğraf</span>
+          <span class="hidden sm:inline">{isStripMode ? 'Kare Ekle' : 'Fotoğraf'}</span>
         </button>
 
         {/* Kör Makara (Randomize) */}
         <button
           type="button"
-          disabled={!hasImg}
+          disabled={!hasImg || isStripMode}
           onClick={randomizeSettings}
           class="border border-amber-900/50 hover:bg-amber-950/30 text-amber-400 p-1.5 rounded-xl text-xs disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer flex items-center justify-center"
           title="Kör Makara: Rastgele Analog Banyo"
@@ -90,7 +100,7 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
         {/* 90° Döndür */}
         <button
           type="button"
-          disabled={!hasImg}
+          disabled={!hasImg || isStripMode}
           onClick={rotateImage}
           class="border border-neutral-800 hover:bg-neutral-800 text-neutral-300 p-1.5 rounded-xl text-xs disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer flex items-center justify-center"
           title="90° Saat Yönünde Döndür"
@@ -101,7 +111,7 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
         {/* Geri Al (Undo) */}
         <button
           type="button"
-          disabled={!canUndo.value}
+          disabled={!canUndo.value || isStripMode}
           onClick={undo}
           class="border border-neutral-800 hover:bg-neutral-800 text-neutral-300 p-1.5 rounded-xl text-xs disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer flex items-center justify-center"
           title="Geri Al (Ctrl+Z)"
@@ -112,7 +122,7 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
         {/* İleri Al (Redo) */}
         <button
           type="button"
-          disabled={!canRedo.value}
+          disabled={!canRedo.value || isStripMode}
           onClick={redo}
           class="border border-neutral-800 hover:bg-neutral-800 text-neutral-300 p-1.5 rounded-xl text-xs disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer flex items-center justify-center"
           title="İleri Al (Ctrl+Y)"
@@ -123,7 +133,7 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
         {/* Sıfırla */}
         <button
           type="button"
-          disabled={!hasImg}
+          disabled={!hasImg && !isStripMode}
           onClick={resetSettings}
           class="border border-neutral-800 hover:bg-neutral-800 text-neutral-300 p-1.5 rounded-xl text-xs disabled:opacity-30 disabled:pointer-events-none transition-colors cursor-pointer flex items-center justify-center"
           title="Tüm Ayarları Sıfırla"
@@ -134,7 +144,7 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
         {/* Hızlı Kaydet Butonu */}
         <button
           type="button"
-          disabled={!hasImg || isSaving}
+          disabled={!canSave || isSaving}
           onClick={onQuickSave}
           class="ml-1 bg-amber-500 hover:bg-amber-400 text-neutral-950 font-bold font-mono py-1.5 px-3 rounded-xl text-xs tracking-wider transition-all shadow-md active:scale-95 disabled:opacity-30 disabled:pointer-events-none flex items-center gap-1.5 cursor-pointer"
         >

@@ -3,6 +3,7 @@ import { PhotoEditor } from '../core/editor';
 import { HistoryManager } from '../core/history';
 import { isHeicFile, convertHeicToLossless } from '../core/heic-loader';
 import { isRawFile } from '../core/raw/libraw-types';
+import { STRIP_MIN_FRAMES } from '../core/strip/constants';
 import { showToast } from './toast';
 import {
   registerEditor,
@@ -17,14 +18,20 @@ import {
   depthProgress,
   depthStatus,
   depthAnalyzing,
-  depthShowMap
+  depthShowMap,
+  addFilesToStrip,
+  exportStripOrContactSheet,
+  stripFrames,
+  stripConfig
 } from './store';
 
 import { TopBar } from './components/TopBar';
 import { CanvasViewport } from './components/CanvasViewport';
+import { StripViewport } from './components/StripViewport';
 import { WorkspaceModeBar } from './components/WorkspaceModeBar';
 import { ToolRail } from './components/ToolRail';
 import { PrintPanel } from './components/PrintPanel';
+import { ContactStripPanel } from './components/ContactStripPanel';
 import { LightTab } from './components/LightTab';
 import { ColorTab } from './components/ColorTab';
 import { FilmTab } from './components/FilmTab';
@@ -33,13 +40,19 @@ import { Histogram } from './components/Histogram';
 import { FinishingTab } from './components/FinishingTab';
 import { HistogramIcon } from './components/Icons';
 
+const ACCEPTED_IMAGE_TYPES =
+  'image/jpeg, image/jpg, image/png, image/webp, image/heic, image/heif, .dng, .cr2, .cr3, .nef, .nrw, .arw, .srf, .sr2, .raf, .orf, .rw2, .raw, .pef, .srw, .3fr, .iiq, .x3f';
+
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const stripFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [editor, setEditor] = useState<PhotoEditor | null>(null);
   const [history, setHistory] = useState<HistoryManager | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [isAddingStripFiles, setIsAddingStripFiles] = useState(false);
+  const [addingStripStatus, setAddingStripStatus] = useState<string>('');
   const [focusRing, setFocusRing] = useState<{ x: number; y: number; depth?: number } | null>(null);
   const [refreshHistogramKey, setRefreshHistogramKey] = useState(0);
 
@@ -137,7 +150,34 @@ export function App() {
     }
   };
 
-  // Full-Resolution Export with 300 DPI & EXIF
+  // Faz 5: Çoklu Kare Şeride Ekleme
+  const handleAddStripFiles = async (files: FileList | File[]) => {
+    setIsAddingStripFiles(true);
+    setAddingStripStatus('Kareler hazırlanıyor...');
+    try {
+      const { added, skippedMax } = await addFilesToStrip(files, (msg) => {
+        setAddingStripStatus(msg);
+      });
+      if (added > 0) {
+        showToast(
+          `${added} fotoğraf film şeridine eklendi${skippedMax ? ' (maksimum 6 kare sınırı uygulandı)' : ''}.`,
+          'success',
+          2600
+        );
+      } else if (skippedMax) {
+        showToast('Film şeridinde en fazla 6 kare bulunabilir.', 'error', 2600);
+      }
+    } catch (err: unknown) {
+      console.error('Şerit dosya yükleme hatası:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Kare şeride eklenemedi: ${msg}`, 'error', 4000);
+    } finally {
+      setIsAddingStripFiles(false);
+      setAddingStripStatus('');
+    }
+  };
+
+  // Full-Resolution Single Export with 300 DPI & EXIF
   const handleExport = async () => {
     if (!editor || !imageLoaded.value) return;
 
@@ -163,6 +203,52 @@ export function App() {
       console.error('Dışa aktarma hatası:', err);
       const msg = err instanceof Error ? err.message : String(err);
       showToast(`Dışa aktarma başarısız: ${msg}`, 'error', 4500);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // Faz 5: 300 DPI Film Şeridi / Kontakt Baskı Dışa Aktarımı
+  const handleStripExport = async () => {
+    if (stripFrames.value.length < STRIP_MIN_FRAMES) {
+      showToast(`Şerit çıktısı için en az ${STRIP_MIN_FRAMES} fotoğraf ekleyin.`, 'error', 2600);
+      return;
+    }
+
+    setIsExporting(true);
+    const isContact = stripConfig.value.outputMode === 'contact';
+    showToast(
+      isContact
+        ? '300 DPI Kontakt Baskı kağıda pozlanıyor...'
+        : '300 DPI 35mm Film Şeridi banyo ediliyor...',
+      'info',
+      2200
+    );
+
+    try {
+      const result = await exportStripOrContactSheet((percent, msg) => {
+        showToast(`%${percent} — ${msg}`, 'info', 900);
+      });
+
+      const suffix = isContact ? 'kontakt_300dpi' : 'serit_300dpi';
+      const url = URL.createObjectURL(result.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `foton_${suffix}.${result.extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast(
+        `300 DPI ${isContact ? 'Kontakt Baskı' : '35mm Film Şeridi'} başarıyla indirildi!`,
+        'success',
+        3800
+      );
+    } catch (err: unknown) {
+      console.error('Şerit dışa aktarma hatası:', err);
+      const msg = err instanceof Error ? err.message : String(err);
+      showToast(`Şerit dışa aktarılamadı: ${msg}`, 'error', 4500);
     } finally {
       setIsExporting(false);
     }
@@ -308,8 +394,14 @@ export function App() {
     <div class="min-h-screen flex flex-col justify-between bg-neutral-950 text-neutral-200 selection:bg-amber-500 selection:text-neutral-950">
       {/* Top Bar */}
       <TopBar
-        onOpenFileSelect={() => fileInputRef.current?.click()}
-        onQuickSave={handleExport}
+        onOpenFileSelect={() => {
+          if (currentMode === 'strip') {
+            stripFileInputRef.current?.click();
+          } else {
+            fileInputRef.current?.click();
+          }
+        }}
+        onQuickSave={currentMode === 'strip' ? handleStripExport : handleExport}
         isSaving={isExporting}
       />
 
@@ -317,23 +409,37 @@ export function App() {
       <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 p-3 sm:p-4 gap-4 max-w-7xl mx-auto w-full items-start">
         {/* Left: Viewport (8 cols on xl, 7 cols on lg) */}
         <div class="lg:col-span-7 xl:col-span-8 flex flex-col gap-3">
-          <CanvasViewport
-            canvasRef={canvasRef}
-            onFileDrop={handleFile}
-            onCanvasClick={handleCanvasClick}
-            focusPoint={focusRing}
-          />
+          {/* CanvasViewport her zaman DOM'da tutularak PhotoEditor ve WebGPU bağlamı korunur */}
+          <div class={currentMode === 'strip' ? 'hidden' : 'flex flex-col gap-3'}>
+            <CanvasViewport
+              canvasRef={canvasRef}
+              onFileDrop={handleFile}
+              onCanvasClick={handleCanvasClick}
+              focusPoint={focusRing}
+            />
+          </div>
+
+          {currentMode === 'strip' && (
+            <StripViewport
+              onFilesDrop={handleAddStripFiles}
+              onOpenStripFilePicker={() => stripFileInputRef.current?.click()}
+              isAddingFiles={isAddingStripFiles}
+              addingStatusText={addingStripStatus}
+            />
+          )}
         </div>
 
         {/* Right: Lightroom Mobile Style Tool Rail & Controls Dock (4-5 cols) */}
         <div class="lg:col-span-5 xl:col-span-4 space-y-3">
-          {/* Histogram Display (at the top of right dock) */}
-          <Histogram
-            canvasElement={canvasRef.current}
-            refreshKey={refreshHistogramKey}
-          />
+          {/* Histogram Display (tekil görüntü modlarında gösterilir) */}
+          {currentMode !== 'strip' && (
+            <Histogram
+              canvasElement={canvasRef.current}
+              refreshKey={refreshHistogramKey}
+            />
+          )}
 
-          {/* Top-Level Workspace Mode Switcher: Negatif Banyo <-> Kağıda Baskı */}
+          {/* Top-Level Workspace Mode Switcher: Negatif Banyo <-> Kağıda Baskı <-> Kontakt & Şerit */}
           <WorkspaceModeBar />
 
           {currentMode === 'develop' ? (
@@ -378,24 +484,48 @@ export function App() {
                 )}
               </div>
             </>
-          ) : (
+          ) : currentMode === 'print' ? (
             <PrintPanel
               onExport={handleExport}
               isExporting={isExporting}
+            />
+          ) : (
+            <ContactStripPanel
+              onOpenStripFilePicker={() => stripFileInputRef.current?.click()}
+              onExportStrip={handleStripExport}
+              isExporting={isExporting}
+              isAddingFiles={isAddingStripFiles}
             />
           )}
         </div>
       </main>
 
-      {/* Hidden File Input for RAW, HEIC, JPG, PNG */}
+      {/* Hidden File Input for Single RAW, HEIC, JPG, PNG */}
       <input
         ref={fileInputRef}
         id="global-file-input"
         type="file"
-        accept="image/jpeg, image/jpg, image/png, image/webp, image/heic, image/heif, .dng, .cr2, .cr3, .nef, .nrw, .arw, .srf, .sr2, .raf, .orf, .rw2, .raw, .pef, .srw, .3fr, .iiq, .x3f"
+        accept={ACCEPTED_IMAGE_TYPES}
         onChange={(e) => {
           const file = (e.target as HTMLInputElement).files?.[0];
           if (file) handleFile(file);
+          (e.target as HTMLInputElement).value = '';
+        }}
+        class="hidden"
+      />
+
+      {/* Hidden Multi-File Input for Faz 5 Film Strip & Contact Sheet */}
+      <input
+        ref={stripFileInputRef}
+        id="strip-file-input"
+        type="file"
+        multiple
+        accept={ACCEPTED_IMAGE_TYPES}
+        onChange={(e) => {
+          const files = (e.target as HTMLInputElement).files;
+          if (files && files.length > 0) {
+            handleAddStripFiles(files);
+          }
           (e.target as HTMLInputElement).value = '';
         }}
         class="hidden"
@@ -406,7 +536,7 @@ export function App() {
 
       {/* Darkroom Footer */}
       <footer class="text-center text-[9px] text-neutral-500 font-mono py-2 bg-neutral-950 border-t border-neutral-900">
-        Foton: Karanlık Oda • LibRaw 16-Bit Linear WASM • WebGPU 3D LUT & Multigrade Darkroom Engine • Preact Signals
+        Foton: Karanlık Oda • LibRaw 16-Bit Linear WASM • WebGPU 3D LUT, Kimya & Kontakt Baskı Motoru • Preact Signals
       </footer>
     </div>
   );

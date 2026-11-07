@@ -6,9 +6,11 @@ import {
   smartRecipeSuggestion,
   imageLoaded
 } from '../store';
+import { PRESETS } from '../../core/presets';
+import { isPushPullSupportedPreset } from '../../core/chemistry/push-pull';
 import { PresetDeck } from './PresetDeck';
 import { PrecisionSlider } from './PrecisionSlider';
-import { SparklesIcon, CheckIcon } from './Icons';
+import { SparklesIcon, CheckIcon, FlaskIcon } from './Icons';
 
 interface FilmTabProps {
   onLoadCubeLut?: (file: File) => void;
@@ -24,6 +26,13 @@ export function FilmTab({
   const settings = sliderSettings.value;
   const suggestion = smartRecipeSuggestion.value;
   const isAnalyzing = smartRecipeAnalyzing.value;
+
+  const isMonoPreset = isPushPullSupportedPreset(settings.preset);
+  const presetDef = PRESETS[settings.preset] || PRESETS.none;
+  const defaultPushStops = presetDef.defaultPushPull ?? 0;
+  const activePushStops = isMonoPreset
+    ? (settings.devPushPull ?? defaultPushStops)
+    : 0;
 
   return (
     <div class="space-y-3.5 p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 shadow-md">
@@ -75,10 +84,91 @@ export function FilmTab({
         <PresetDeck onLoadCubeLut={onLoadCubeLut} />
       </div>
 
-      {/* Spektral Emülsiyon Sliders */}
-      <div class="border-t border-neutral-800/60 pt-2 space-y-3">
+      {/* FAZ 3: KARANLIK ODA NEGATİF BANYO KİMYASI */}
+      <div class="border-t border-neutral-800/60 pt-2.5 space-y-2.5">
+        <div class="flex items-center justify-between">
+          <span class="text-[9px] text-amber-400 font-mono tracking-wider font-bold flex items-center gap-1.5">
+            <FlaskIcon class="w-3.5 h-3.5 text-amber-400" />
+            <span>NEGATİF BANYO KİMYASI (FAZ 3)</span>
+          </span>
+          <span
+            class={`text-[8px] font-mono px-1.5 py-0.5 rounded border ${
+              isMonoPreset
+                ? 'bg-amber-500/15 text-amber-300 border-amber-500/40'
+                : 'bg-neutral-800/80 text-neutral-400 border-neutral-700'
+            }`}
+          >
+            {isMonoPreset ? 'S/B PUSH AKTİF' : 'RENKLİ / DİA'}
+          </span>
+        </div>
+
+        <PrecisionSlider
+          label="PUSH / PULL SÜRESİ"
+          value={activePushStops}
+          min={-2}
+          max={3}
+          step={0.25}
+          defaultValue={defaultPushStops}
+          unit=" stop"
+          disabled={!isMonoPreset}
+          formatValue={(val) => {
+            if (!isMonoPreset) return 'S/B GEREKLİ';
+            const rounded = Number(val.toFixed(2));
+            return `${rounded > 0 ? `+${rounded}` : rounded} stop`;
+          }}
+          description={
+            isMonoPreset
+              ? 'Geliştirme süresiyle H&D gama eğimini ve dip/omuz kaymasını kalibre eder (Moriyama varsayılan: +2 stop)'
+              : 'Push/Pull yalnızca S/B negatif profillerinde (Ilford HP5+ ve Moriyama S/B) etkindir'
+          }
+          onChange={(v) => updateSetting('devPushPull', v)}
+          onCommit={() => commitSettingToHistory()}
+        />
+
+        <PrecisionSlider
+          label="DEVELOPER TÜKENMESİ"
+          value={settings.devExhaustion ?? 0}
+          min={0}
+          max={1}
+          step={0.01}
+          defaultValue={0}
+          accent="amber"
+          description="Yoğun gümüş bölgelerinde yerel geliştirici tükenmesiyle komşu kazancı düşürür (35mm negatifte 1.85 mm difüzyon)"
+          onChange={(v) => updateSetting('devExhaustion', v)}
+          onCommit={() => commitSettingToHistory()}
+        />
+
+        <PrecisionSlider
+          label="KENAR ETKİSİ (KOSTINSKY)"
+          value={settings.devEdgeEffect ?? 0}
+          min={0}
+          max={1}
+          step={0.01}
+          defaultValue={0}
+          accent="emerald"
+          description="Yüksek kontrast sınırlarında yanal geliştirici difüzyonuyla Mackie mikro-keskinlik halesi üretir (0.20 mm DoG)"
+          onChange={(v) => updateSetting('devEdgeEffect', v)}
+          onCommit={() => commitSettingToHistory()}
+        />
+
+        <PrecisionSlider
+          label="RETICULATION (TERMAL ŞOK)"
+          value={settings.devReticulation ?? 0}
+          min={0}
+          max={1}
+          step={0.01}
+          defaultValue={0}
+          accent="cyan"
+          description="Sıcaklık şokuyla jelatini hücresel Worley sırtlarında çatlatır ve film grenini kümelendirir (gren sonrası)"
+          onChange={(v) => updateSetting('devReticulation', v)}
+          onCommit={() => commitSettingToHistory()}
+        />
+      </div>
+
+      {/* Spektral Emülsiyon & Optik Sızıntı Sliders */}
+      <div class="border-t border-neutral-800/60 pt-2.5 space-y-3">
         <span class="text-[9px] block text-amber-400 font-mono tracking-wider font-bold">
-          SPEKTRAL EMÜLSİYON & KİMYASAL BANYO
+          SPEKTRAL EMÜLSİYON & GÜMÜŞ KATMANLARI
         </span>
 
         <PrecisionSlider
