@@ -19,3 +19,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+### Third-Party Software and Open Source Notices
+
+This project incorporates and builds upon the following open-source software libraries:
+
+1. **LibRaw**
+   - License: CDDL 1.0 / LGPL 2.1
+   - Website: https://www.libraw.org/
+   - The native C++ LibRaw demosaicing engine is compiled to WebAssembly (WASM SIMD) via Emscripten.
+
+2. **ONNX Runtime Web**
+   - License: MIT License
+   - Copyright (c) Microsoft Corporation
+   - Used for in-browser client-side machine learning inference (Depth Anything V2).
+
+3. **Preact & @preact/signals**
+   - License: MIT License
+   - Copyright (c) Jason Miller and contributors
+   - Used for the fast virtual DOM and fine-grained reactive state management.
+
+4. **Tailwind CSS**
+   - License: MIT License
+   - Copyright (c) Tailwind Labs, Inc.
+
+5. **heic2any**
+   - License: MIT License
+   - Used for client-side Apple HEIC/HEIF image container decoding.

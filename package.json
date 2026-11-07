@@ -1,7 +1,7 @@
 {
   "name": "karanlik-oda",
   "version": "3.0.0",
-  "description": "🧪 Foton: Karanlık Oda - Wabi-Sabi Analog Banyo İstasyonu",
+  "description": "Foton: Karanlık Oda - İstemci Taraflı Profesyonel Analog Banyo ve Optik Simülasyon İstasyonu",
   "type": "module",
   "scripts": {
     "dev": "vite",
