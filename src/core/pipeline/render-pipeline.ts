@@ -176,7 +176,7 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
   let activeDepthCanvas: AnyCanvas | null = options.depthCanvas || null;
   let tempDepthCanvasCreated = false;
 
-  if (settings.aiDepthEnabled && !activeDepthCanvas) {
+  if (!activeDepthCanvas) {
     const maxDepthDim = 1536;
     const depthW = Math.min(w, maxDepthDim);
     const depthH = Math.max(1, Math.round((h * depthW) / w));
@@ -208,13 +208,14 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
     applySwirlyBokeh(
       target,
       settings.swirl,
-      settings.aiDepthEnabled ? activeDepthCanvas : null,
+      activeDepthCanvas,
       settings.aiFocalDepth,
       settings.aiDepthAperture,
       settings.soapBubble ?? 0,
       settings.loca ?? 0,
       settings.apertureBlades ?? 0,
-      settings.bladeCurvature ?? 85
+      settings.bladeCurvature ?? 85,
+      options.skinMask
     );
   }
 

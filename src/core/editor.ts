@@ -1080,7 +1080,7 @@ export class PhotoEditor {
     const h = isTransposed ? srcW : srcH;
 
     const skinMask =
-      settings.skinProtection > 0
+      settings.skinProtection > 0 || settings.swirl > 0
         ? this.getOrCreateSkinMask(sourceImg, rotation, w, h)
         : null;
 

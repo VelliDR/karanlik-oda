@@ -234,7 +234,8 @@ export function applySwirlyBokeh(
   soapBubble: number = 0,
   loca: number = 0,
   apertureBlades: number = 0,
-  bladeCurvature: number = 85
+  bladeCurvature: number = 85,
+  skinMask?: AnyCanvas | null
 ): void {
   if (intensity <= 0) return;
 
@@ -253,7 +254,8 @@ export function applySwirlyBokeh(
         apertureBlades,
         bladeCurvature
       },
-      depthMask
+      depthMask,
+      skinMask
     );
     if (success) return;
   }
@@ -263,7 +265,6 @@ export function applySwirlyBokeh(
   const cx = w / 2;
   const cy = h / 2;
   const minDim = Math.min(w, h);
-  const centerRadius = minDim * 0.35;
   const maxRadius = Math.hypot(cx, cy);
 
   const workCanvas = createCompatibleCanvas(w, h);
@@ -314,7 +315,7 @@ export function applySwirlyBokeh(
 
   // 3. Odak Kalkanı / Maskeleme
   // 3D Derinlik haritası varsa fiziksel DoF maskesini kullan;
-  // yoksa optik alan eğriliği (Field Curvature: merkez keskin, kenarlar dönen) radyal maskesini kullan.
+  // yoksa optik alan eğriliği (Field Curvature: merkez/portre alanı keskin, kenarlar dönen) radyal maskesini kullan.
   wCtx.globalCompositeOperation = 'destination-in';
 
   if (depthMask) {
@@ -323,21 +324,28 @@ export function applySwirlyBokeh(
     dofMask.width = 0;
     dofMask.height = 0;
   } else {
+    // Geniş merkez elipsi: Özne kadrajın ortasında/portre alanında (%50-60) net kalır, girdap sadece kenarlarda oluşur
     const grad = wCtx.createRadialGradient(
       cx,
       cy,
-      centerRadius * 0.45,
+      minDim * 0.38,
       cx,
       cy,
-      maxRadius * 0.88
+      maxRadius * 0.92
     );
     grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
-    grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.08)');
-    grad.addColorStop(0.7, 'rgba(255, 255, 255, 0.75)');
+    grad.addColorStop(0.45, 'rgba(255, 255, 255, 0)');
+    grad.addColorStop(0.80, 'rgba(255, 255, 255, 0.75)');
     grad.addColorStop(1, 'rgba(255, 255, 255, 1.0)');
 
     wCtx.fillStyle = grad;
     wCtx.fillRect(0, 0, w, h);
+  }
+
+  // 🛡️ Eğer ten kalkanı varsa özneyi 2D fallback'te de maskeden sil (özne %100 net kalır)
+  if (skinMask) {
+    wCtx.globalCompositeOperation = 'destination-out';
+    wCtx.drawImage(skinMask as CanvasImageSource, 0, 0);
   }
 
   // 4. Hedef tuvale pürüzsüzce mühürle

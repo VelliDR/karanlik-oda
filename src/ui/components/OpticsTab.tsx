@@ -89,6 +89,10 @@ export function OpticsTab({ onToggleDepth, onToggleDepthMap, onAutoFocus }: Opti
       commitSettingToHistory();
       showToast('Tüm optik ayarları sıfırlandı.', 'info', 2000);
     }
+
+    if (profile !== 'reset' && !isDepthOn && onToggleDepth && imageLoaded.value && !isAnalyzing) {
+      onToggleDepth(true);
+    }
   };
 
   return (
@@ -156,8 +160,13 @@ export function OpticsTab({ onToggleDepth, onToggleDepthMap, onAutoFocus }: Opti
         max={100}
         defaultValue={0}
         accent="amber"
-        description="Kenar dairesel astigmatizm ve optik bükülme kusuru"
-        onChange={(v) => updateSetting('swirl', v)}
+        description="Özne odakta net kalır; teğetsel girdap ve kedi gözü sadece arka planda oluşur"
+        onChange={(v) => {
+          updateSetting('swirl', v);
+          if (v > 0 && !isDepthOn && onToggleDepth && imageLoaded.value && !isAnalyzing) {
+            onToggleDepth(true);
+          }
+        }}
         onCommit={() => commitSettingToHistory()}
       />
 

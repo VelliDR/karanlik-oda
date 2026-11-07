@@ -47,13 +47,16 @@ struct HeliosUniforms {
   loca: f32,
   apertureBlades: f32,
   bladeCurvature: f32,
-  pad1: vec4<f32>,
+  hasSkinMap: f32,
+  pad0: f32,
+  pad1: vec2<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: HeliosUniforms;
 @group(0) @binding(1) var imageTexture: texture_2d<f32>;
 @group(0) @binding(2) var depthTexture: texture_2d<f32>;
 @group(0) @binding(3) var texSampler: sampler;
+@group(0) @binding(4) var skinTexture: texture_2d<f32>;
 
 // Jorge Jimenez Interleaved Gradient Noise (IGN)
 // Yüksek frekanslı (mavi gürültü profilli) ekran uzayı gürültüsü
@@ -85,7 +88,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   // Kedi gözü diyafram vinyeti: Kenarlara doğru radyal basıklık ve teğetsel esneme
   let normDist = clamp(dist * 1.8, 0.0, 1.6);
-  let catEyeFactor = smoothstep(0.18, 0.95, normDist);
+  // Merkez optik eksende diyafram %100 daireseldir (swirl olmaz); girdap sadece dış çeperde başlar:
+  let catEyeFactor = smoothstep(0.35, 1.05, normDist);
   let catEyeStrength = uniforms.catEye / 100.0;
   let radialCompress = mix(1.0, 0.32, catEyeFactor * (intensity / 100.0) * catEyeStrength);
   let tangentialStretch = mix(1.0, 1.0 + (intensity / 100.0) * 2.8, catEyeFactor);
@@ -100,19 +104,30 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let z = textureSampleLevel(depthTexture, texSampler, in.uv, 0.0).r;
     centerZ = z;
     let apertureFactor = uniforms.aperture / 100.0;
-    let threshold = 0.35 - apertureFactor * 0.31;
+    // Portre öznelerinin fiziksel derinlik hacmini (saç, kulak, omuz, giysi) koruyan DoF eşiği:
+    let threshold = mix(0.24, 0.12, apertureFactor);
     depthThreshold = threshold;
     let diff = z - uniforms.focalDepth;
     let absDiff = abs(diff);
     if (absDiff > threshold) {
-      coc = clamp((absDiff - threshold) / 0.16, 0.0, 1.0);
+      coc = smoothstep(0.0, 0.22, absDiff - threshold);
     }
     focusSign = sign(diff);
   } else {
-    // Alan Eğriliği (Field Curvature): Merkez keskin, kenarlara doğru dönen bokeh
-    let centerSharpRadius = 0.22;
-    coc = smoothstep(centerSharpRadius, 0.85, normDist);
+    // Alan Eğriliği (Field Curvature):
+    // 3D derinlik henüz yoksa, portre kompozisyonundaki özne kadrajın dikey elipsinde yer alır.
+    // Dikey portre elipsi ile özne net korunur; girdap sadece kenarlarda ve arka planda oluşur.
+    let portraitDist = length(vec2<f32>(centeredUV.x * 1.35, centeredUV.y * 0.90));
+    coc = smoothstep(0.42, 1.15, portraitDist);
     focusSign = 1.0;
+  }
+
+  // 🛡️ Akıllı Ten ve Özne Kalkanı:
+  // İnsan teni/yüzü tespit edildiyse dönme ve bulanıklık kalkan tarafından tamamen sıfırlanır
+  if (uniforms.hasSkinMap > 0.5) {
+    let skinSample = textureSampleLevel(skinTexture, texSampler, in.uv, 0.0);
+    let skinVal = max(skinSample.a, skinSample.r);
+    coc = coc * (1.0 - clamp(skinVal * 1.8, 0.0, 1.0));
   }
 
   if (coc <= 0.001) {
@@ -251,6 +266,7 @@ export class HeliosWebGPUEngine {
   private readonly uniformBuffer: GPUBuffer;
   private readonly presentationFormat: GPUTextureFormat;
   private readonly dummyDepthTexture: GPUTexture;
+  private readonly dummySkinTexture: GPUTexture;
 
   private gpuCanvas: OffscreenCanvas;
   private gpuContext: GPUCanvasContext;
@@ -307,6 +323,21 @@ export class HeliosWebGPUEngine {
     this.device.queue.writeTexture(
       { texture: this.dummyDepthTexture },
       whitePixel,
+      { bytesPerRow: 4, rowsPerImage: 1 },
+      [1, 1, 1]
+    );
+
+    // 1x1 şeffaf dummy ten/özne maske dokusu
+    this.dummySkinTexture = this.device.createTexture({
+      label: 'Helios Dummy Skin Texture',
+      size: [1, 1, 1],
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+    });
+    const blackZero = new Uint8Array([0, 0, 0, 0]);
+    this.device.queue.writeTexture(
+      { texture: this.dummySkinTexture },
+      blackZero,
       { bytesPerRow: 4, rowsPerImage: 1 },
       [1, 1, 1]
     );
@@ -371,7 +402,8 @@ export class HeliosWebGPUEngine {
   public renderToTarget(
     target: RenderTarget,
     params: HeliosParams,
-    depthCanvas?: AnyCanvas | null
+    depthCanvas?: AnyCanvas | null,
+    skinCanvas?: AnyCanvas | null
   ): boolean {
     const { width: w, height: h, ctx } = target;
     if (w <= 0 || h <= 0 || params.intensity <= 0) return false;
@@ -433,6 +465,35 @@ export class HeliosWebGPUEngine {
         }
       }
 
+      // 2.1 Ten ve Özne Koruma Kalkanı dokusu
+      let skinTexture = this.dummySkinTexture;
+      let hasSkin = 0.0;
+      let tempSkinTexture: GPUTexture | null = null;
+
+      if (skinCanvas && skinCanvas.width > 0 && skinCanvas.height > 0) {
+        try {
+          const sw = skinCanvas.width;
+          const sh = skinCanvas.height;
+          tempSkinTexture = this.device.createTexture({
+            label: 'Helios Skin Texture',
+            size: [sw, sh, 1],
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
+          });
+          this.device.queue.copyExternalImageToTexture(
+            { source: skinCanvas as GPUCopyExternalImageSource },
+            { texture: tempSkinTexture },
+            [sw, sh]
+          );
+
+          skinTexture = tempSkinTexture;
+          hasSkin = 1.0;
+        } catch {
+          skinTexture = this.dummySkinTexture;
+          hasSkin = 0.0;
+        }
+      }
+
       // 3. Uniform verisi (16 float = 64 byte, 16-byte hizalamalı)
       const aspect = w / h;
       const uniformData = new Float32Array(16);
@@ -448,7 +509,8 @@ export class HeliosWebGPUEngine {
       uniformData[9] = params.loca ?? 0.0;
       uniformData[10] = params.apertureBlades ?? 0.0;
       uniformData[11] = params.bladeCurvature ?? 85.0;
-      // [12..15] pad alanları sıfır kalır
+      uniformData[12] = hasSkin;
+      // [13..15] pad alanları sıfır kalır
 
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
@@ -460,7 +522,8 @@ export class HeliosWebGPUEngine {
           { binding: 0, resource: { buffer: this.uniformBuffer } },
           { binding: 1, resource: imageTexture.createView() },
           { binding: 2, resource: depthTexture.createView() },
-          { binding: 3, resource: this.sampler }
+          { binding: 3, resource: this.sampler },
+          { binding: 4, resource: skinTexture.createView() }
         ]
       });
 
@@ -500,6 +563,9 @@ export class HeliosWebGPUEngine {
       if (tempDepthTexture) {
         tempDepthTexture.destroy();
       }
+      if (tempSkinTexture) {
+        tempSkinTexture.destroy();
+      }
 
       return true;
     } catch (err) {
@@ -511,6 +577,7 @@ export class HeliosWebGPUEngine {
   public destroy(): void {
     try {
       this.dummyDepthTexture.destroy();
+      this.dummySkinTexture.destroy();
       this.uniformBuffer.destroy();
     } catch {}
     HeliosWebGPUEngine.instance = null;
