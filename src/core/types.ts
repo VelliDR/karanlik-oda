@@ -36,6 +36,10 @@ export interface HeliosParams {
   focalDepth?: number;    // 0.0 to 1.0 (varsayılan 0.5)
   aperture?: number;      // 0 to 100 (varsayılan 50)
   catEye?: number;        // 0 to 100
+  soapBubble?: number;    // 0 to 100 (Sabun köpüğü / parlak halka bokeh)
+  loca?: number;          // 0 to 100 (Boyuna kromatik sapma / LoCA saçaklanması)
+  apertureBlades?: number;// 0 = Dairesel (f/2), 6 = Helios 44M (6 Bıçak), 8 = Helios 44-2 (8 Bıçak)
+  bladeCurvature?: number;// 0 to 100 (Bıçak kavis sertliği / düzlüğü)
 }
 
 export interface CcdParams {
@@ -91,6 +95,10 @@ export interface SliderSettings {
 
   // Vintage Optik Kusurlar
   swirl: number;        // 0 to 100 (Helios 44M dönen bokeh)
+  soapBubble: number;   // 0 to 100 (Sabun köpüğü / parlak halka bokeh)
+  loca: number;         // 0 to 100 (Boyuna kromatik sapma / LoCA yeşil-mor saçaklanması)
+  apertureBlades: number; // 0 = Dairesel (f/2), 6 = Helios 44M (6 Bıçak), 8 = Helios 44-2 (8 Bıçak)
+  bladeCurvature: number; // 0 to 100 (Bıçak kavis sertliği / düzlüğü)
   chromatic: number;    // 0 to 100 (Kromatik odak sapması)
   proMist: number;      // 0 to 100 (Black Pro-Mist difüzyonu)
   vignette: number;     // 0 to 100 (Mekanik vinyet)

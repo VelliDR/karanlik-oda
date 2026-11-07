@@ -230,11 +230,15 @@ export function applySwirlyBokeh(
   intensity: number,
   depthMask?: AnyCanvas | null,
   focalDepth: number = 0.5,
-  aperture: number = 50
+  aperture: number = 50,
+  soapBubble: number = 0,
+  loca: number = 0,
+  apertureBlades: number = 0,
+  bladeCurvature: number = 85
 ): void {
   if (intensity <= 0) return;
 
-  // 1. WebGPU Motoru: Donanım hızlandırmalı Vogel disk spiral bokeh
+  // 1. WebGPU Motoru: Donanım hızlandırmalı Vogel disk spiral bokeh (Sabun Köpüğü, LoCA, Vesica Piscis & Diyafram Bıçakları)
   const webgpuEngine = HeliosWebGPUEngine.getInstanceSync();
   if (webgpuEngine) {
     const success = webgpuEngine.renderToTarget(
@@ -243,7 +247,11 @@ export function applySwirlyBokeh(
         intensity,
         focalDepth,
         aperture,
-        catEye: 100
+        catEye: 100,
+        soapBubble,
+        loca,
+        apertureBlades,
+        bladeCurvature
       },
       depthMask
     );
@@ -1047,7 +1055,7 @@ export function applyFilmBorder(target: RenderTarget, border: FilmBorder): void 
     ctx.textBaseline = 'middle';
     ctx.textAlign = 'left';
 
-    ctx.fillText('🎞️ KODAK 400 • DX-SAFETY', bSize + 8, bSize / 2);
+    ctx.fillText('◆ KODAK 400 • DX-SAFETY', bSize + 8, bSize / 2);
     ctx.textAlign = 'right';
     ctx.fillText('▶ 24A', w - bSize - 8, h - bSize / 2);
   }

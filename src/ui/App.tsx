@@ -27,6 +27,7 @@ import { FilmTab } from './components/FilmTab';
 import { OpticsTab } from './components/OpticsTab';
 import { Histogram } from './components/Histogram';
 import { FinishingTab } from './components/FinishingTab';
+import { HistogramIcon } from './components/Icons';
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -35,7 +36,7 @@ export function App() {
   const [editor, setEditor] = useState<PhotoEditor | null>(null);
   const [history, setHistory] = useState<HistoryManager | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  const [focusRing, setFocusRing] = useState<{ x: number; y: number } | null>(null);
+  const [focusRing, setFocusRing] = useState<{ x: number; y: number; depth?: number } | null>(null);
   const [refreshHistogramKey, setRefreshHistogramKey] = useState(0);
 
   // Initialize Core PhotoEditor
@@ -69,7 +70,7 @@ export function App() {
 
     // 1. RAW Dosyası Kontrolü (.DNG, .CR2, .CR3, .NEF, .ARW, .RAF, vb.)
     if (isRawFile(file)) {
-      showToast(`📸 RAW algılandı: ${file.name}. LibRaw motoru başlatılıyor...`, 'info', 2500);
+      showToast(`RAW algılandı: ${file.name}. LibRaw motoru başlatılıyor...`, 'info', 2500);
       try {
         const metadata = await editor.loadRawFile(file, (_percent, msg) => {
           showToast(msg, 'info', 1200);
@@ -78,7 +79,7 @@ export function App() {
         syncFromEditor();
         history.reset(editor.getSnapshot());
         showToast(
-          `✨ RAW başarıyla banyo edildi: ${metadata.make} ${metadata.model} (${metadata.width}×${metadata.height})`,
+          `RAW başarıyla banyo edildi: ${metadata.make} ${metadata.model} (${metadata.width}×${metadata.height})`,
           'success',
           4000
         );
@@ -92,7 +93,7 @@ export function App() {
 
     // 2. Apple HEIC / HEIF Dosyası Kontrolü
     if (isHeicFile(file)) {
-      showToast('🍏 Apple HEIC dosyası algılandı. Kayıpsız PNG formatına dönüştürülüyor...', 'info', 2500);
+      showToast('Apple HEIC dosyası algılandı. Kayıpsız PNG formatına dönüştürülüyor...', 'info', 2500);
       try {
         const converted = await convertHeicToLossless(file);
         await editor.loadImageFromBlob(converted);
@@ -125,7 +126,7 @@ export function App() {
     if (!editor || !imageLoaded.value) return;
 
     setIsExporting(true);
-    showToast('🖨️ 300 DPI Fine-Art banyosu hazırlanıyor...', 'info', 2000);
+    showToast('300 DPI Fine-Art banyosu hazırlanıyor...', 'info', 2000);
 
     try {
       const result = await editor.exportHighRes(undefined, undefined, (percent, msg) => {
@@ -141,7 +142,7 @@ export function App() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showToast('💎 Tam çözünürlüklü 300 DPI görsel başarıyla mühürlendi ve indirildi!', 'success', 4000);
+      showToast('Tam çözünürlüklü 300 DPI görsel başarıyla mühürlendi ve indirildi!', 'success', 4000);
     } catch (err: unknown) {
       console.error('Dışa aktarma hatası:', err);
       const msg = err instanceof Error ? err.message : String(err);
@@ -164,7 +165,7 @@ export function App() {
           depthStatus.value = msg;
         });
         depthStatus.value = 'AKTİF';
-        showToast('🤖 3D Fiziksel Alan Derinliği Hazır! Fotoğrafa dokunarak odaklayabilirsiniz.', 'info', 3500);
+        showToast('3D Fiziksel Alan Derinliği Hazır! Fotoğrafa dokunarak odaklayabilirsiniz.', 'info', 3500);
       } catch (err: unknown) {
         depthStatus.value = 'HATA';
         const msg = err instanceof Error ? err.message : String(err);
@@ -189,7 +190,7 @@ export function App() {
     const show = !editor.settings.aiShowDepthMap;
     editor.setAiShowDepthMap(show);
     depthShowMap.value = show;
-    showToast(show ? '👁️ 3D Derinlik Haritası İnceleme Modu' : 'Normal Görünüm', 'info', 1800);
+    showToast(show ? '3D Derinlik Haritası İnceleme Modu' : 'Normal Görünüm', 'info', 1800);
   };
 
   // Canvas Tap-to-Focus
@@ -206,18 +207,39 @@ export function App() {
     const normX = Math.min(1.0, Math.max(0, clickX / rect.width));
     const normY = Math.min(1.0, Math.max(0, clickY / rect.height));
 
+    const wrapper = canvas.parentElement;
+    const wrapperRect = wrapper ? wrapper.getBoundingClientRect() : rect;
+    const ringX = e.clientX - wrapperRect.left;
+    const ringY = e.clientY - wrapperRect.top;
+
     const sampledZ = editor.sampleDepthAt(normX, normY);
     editor.setAiFocalDepth(sampledZ);
     syncFromEditor();
 
     if (history) history.push(editor.getSnapshot());
 
-    // Show focus ring animation
-    setFocusRing({ x: clickX, y: clickY });
-    setTimeout(() => setFocusRing(null), 700);
+    // Show cinematic viewfinder AF reticle animation
+    setFocusRing({ x: ringX, y: ringY, depth: sampledZ });
+    setTimeout(() => setFocusRing(null), 1200);
 
     const percent = Math.round(sampledZ * 100);
-    showToast(`🎯 Odak Noktası Belirlendi: %${percent}`, 'info', 1500);
+    const regionName = sampledZ > 0.65 ? 'Ön Plan' : sampledZ > 0.35 ? 'Orta Alan' : 'Arka Plan';
+    showToast(`Odak Kilitlendi: %${percent} (${regionName})`, 'info', 1600);
+  };
+
+  // Smart Auto-Focus on Subject
+  const handleAutoFocus = () => {
+    if (!editor || !editor.hasImage || !editor.hasDepthMap) {
+      showToast('Önce 3D derinlik analizini açın.', 'error', 2500);
+      return;
+    }
+    const autoZ = editor.autoFocusOnSubject();
+    syncFromEditor();
+    if (history) history.push(editor.getSnapshot());
+
+    const percent = Math.round(autoZ * 100);
+    const regionName = autoZ > 0.65 ? 'Ön Plan' : autoZ > 0.35 ? 'Orta Alan' : 'Arka Plan';
+    showToast(`Akıllı AF Kilitlendi: %${percent} (${regionName})`, 'success', 2500);
   };
 
   // Custom .CUBE 3D LUT loader
@@ -228,7 +250,7 @@ export function App() {
       const lut = editor.loadCustomCubeLUT(text, file.name);
       syncFromEditor();
       history.push(editor.getSnapshot());
-      showToast(`🧊 3D LUT yüklendi: ${lut.title} (${lut.size}×${lut.size}×${lut.size} Tetrahedral)`, 'success', 3500);
+      showToast(`3D LUT yüklendi: ${lut.title} (${lut.size}×${lut.size}×${lut.size} Tetrahedral)`, 'success', 3500);
     } catch (err: unknown) {
       console.error(err);
       const msg = err instanceof Error ? err.message : '.CUBE okunamadı.';
@@ -244,7 +266,7 @@ export function App() {
       const suggestion = editor.getSmartRecipeSuggestion();
       smartRecipeSuggestion.value = suggestion;
       if (suggestion) {
-        showToast(`✨ Reçete Önerisi: ${suggestion.presetName} (${suggestion.sceneTitle})`, 'info', 3000);
+        showToast(`Reçete Önerisi: ${suggestion.presetName} (${suggestion.sceneTitle})`, 'info', 3000);
       }
     } catch (err) {
       showToast('Sahne analiz edilemedi.', 'error', 3000);
@@ -259,7 +281,7 @@ export function App() {
     editor.applySmartRecipe(sug);
     syncFromEditor();
     history.push(editor.getSnapshot());
-    showToast(`🧪 ${sug.presetName} reçetesi ve optik ayarları uygulandı!`, 'success', 3000);
+    showToast(`${sug.presetName} reçetesi ve optik ayarları uygulandı!`, 'success', 3000);
   };
 
   const currentTab = activeTab.value;
@@ -311,12 +333,14 @@ export function App() {
               <OpticsTab
                 onToggleDepth={handleToggleDepth}
                 onToggleDepthMap={handleToggleDepthMap}
+                onAutoFocus={handleAutoFocus}
               />
             )}
             {currentTab === 'histogram' && (
               <div class="p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 space-y-2">
-                <span class="text-[10px] font-mono font-bold text-amber-400">
-                  📊 HİSTOGRAM & KANAL DAĞILIMI
+                <span class="text-[10px] font-mono font-bold text-amber-400 flex items-center gap-1.5">
+                  <HistogramIcon class="w-3.5 h-3.5 text-amber-400" />
+                  <span>HİSTOGRAM & KANAL DAĞILIMI</span>
                 </span>
                 <p class="text-[9px] text-neutral-400 font-mono leading-relaxed">
                   Histogram, fotoğrafınızdaki ışık ve renk dalga boylarının 0 (mutlak siyah) ile 255 (mutlak beyaz) arasındaki dağılımını gösterir. Mavi üçgen gölge detay kaybını (underexposure), kırmızı üçgen ise parlak ton patlamasını (blown highlights) belirtir.

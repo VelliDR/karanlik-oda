@@ -302,7 +302,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Düşük ortam ışığı ve noktasal parlak yapay ışık kaynakları',
       recommendedPreset: 'cinestill',
       presetName: PRESETS.cinestill.name,
-      badge: '🎬 CineStill 800T',
+      badge: 'CineStill 800T',
       explanation:
         'Karanlık gölgeler içinde noktasal yapay ışık patlamaları saptandı. Rem-jet katmanı eksikliğinden doğan 650nm spektral kırılmalı kırmızı halasyon saçılması ve Vision3 500T 3D LUT için CineStill 800T reçetesi öneriliyor.',
       sliderTweaks: {
@@ -342,7 +342,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Ağır loş ortam ve yoğun kırmızı dalga boyu hakimiyeti',
       recommendedPreset: 'vampir',
       presetName: PRESETS.vampir.name,
-      badge: '🩸 Vampir Crimson',
+      badge: 'Vampir Crimson',
       explanation:
         'Koyu gölgeler ve baskın kırmızı ışık enerjisi analiz edildi. Dramatik gotik kontrast, kan kırmızısı 3D LUT boya kuplajı ve spektral halasyon için Vampir reçetesi öneriliyor.',
       sliderTweaks: {
@@ -383,7 +383,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Düşük açılı sıcak güneş ışığı, zengin kehribar parlaması',
       recommendedPreset: 'kodachrome',
       presetName: PRESETS.kodachrome.name,
-      badge: '🌅 Kodachrome 64',
+      badge: 'Kodachrome 64',
       explanation:
         'Düşük açılı altın saat ışığı, zengin kehribar sıcaklığı ve yumuşak geçişli gölgeler belirlendi. Arşivsel K-14 boya kuplajı, H&D omuz sıkıştırması ve organik altın sıcaklık için Kodachrome 64 3D LUT reçetesi tavsiye ediliyor.',
       sliderTweaks: {
@@ -421,7 +421,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Belirgin insan öznesi ve dengeli doğal portre ışığı',
       recommendedPreset: 'analog',
       presetName: PRESETS.analog.name,
-      badge: '🎞️ Kodak Portra 400',
+      badge: 'Kodak Portra 400',
       explanation:
         'Fotoğrafta insan ten pigmentleri ve odaklanmış özne dengesi saptandı. Açık tonların patlamasını önleyen H&D film omzu (shoulder), kadifemsi C-41 3D LUT geçişi ve Helios portre bokehi için Kodak Portra 400 öneriliyor.',
       sliderTweaks: {
@@ -460,7 +460,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Ağaçlık, yaprak veya botanik bitki örtüsü ağırlıklı doğal ışık',
       recommendedPreset: 'velvia',
       presetName: PRESETS.velvia.name,
-      badge: '🌿 Fuji Velvia 50',
+      badge: 'Fuji Velvia 50',
       explanation:
         'Yoğun bitki örtüsü ve klorofil yeşili renk tonları analiz edildi. E-6 dia emülsiyonunun derin zümrüt yeşili spektral 3D LUT tepkisi ve zengin doğa mikro-kontrastı için Fuji Velvia 50 reçetesi öneriliyor.',
       sliderTweaks: {
@@ -501,7 +501,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Açık deniz mavisi, berrak gökyüzü ve yüksek gün ışığı enerjisi',
       recommendedPreset: 'analog',
       presetName: PRESETS.analog.name,
-      badge: '🌊 Ege / Sahil 35mm',
+      badge: 'Ege / Sahil 35mm',
       explanation:
         'Turkuaz deniz tonları, açık gökyüzü ve canlı açık ton enerjisi saptandı. Parlak güneş yansımalarını H&D film omzuna yumuşakça sıkıştıran ve gökyüzü mavisini koruyan 35mm sahil banyosu tavsiye ediliyor.',
       sliderTweaks: {
@@ -542,7 +542,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Sarı-turuncu yapay tungsten aydınlatma ve loş iç mekan ambiyansı',
       recommendedPreset: 'analog',
       presetName: PRESETS.analog.name,
-      badge: '☕ Sıcak Kafe & İç Mekan',
+      badge: 'Sıcak Kafe & İç Mekan',
       explanation:
         'Sarı-turuncu yapay tungsten aydınlatma ve loş iç mekan ambiyansı belirlendi. Sıcak kahve tonları, dip tonlarda (toe) logaritmik uyanış ve 650nm hafif halasyon yayılımı için Kodak Portra reçetesi öneriliyor.',
       sliderTweaks: {
@@ -577,7 +577,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Derin gölgeler, sert ışık kırılmaları ve yüksek dinamik aralık',
       recommendedPreset: 'sb',
       presetName: PRESETS.sb.name,
-      badge: '🖤 Moriyama S/B',
+      badge: 'Moriyama S/B',
       explanation:
         'Yüksek dinamik aralık ve grafiksel gölge formları analiz edildi. Daido Moriyama tarzı Tri-X 400 Push 3D LUT estetiği, dik H&D eğrisi ve keskin analog gren dokusu için Moriyama S/B reçetesi öneriliyor.',
       sliderTweaks: {
@@ -612,7 +612,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Dağınık bulutlu gün ışığı ve soğuk mavi-gri ton ağırlığı',
       recommendedPreset: 'nordic',
       presetName: PRESETS.nordic.name,
-      badge: '🌾 Leica Nordic',
+      badge: 'Leica Nordic',
       explanation:
         'Düşük renk doygunluğu ve serin gölge tonlaması saptandı. İskandinav arduvaz-laciverti derin gölgeler, H&D omuz korumalı parşömen beyazları ve dingin melankoli için Leica Nordic 3D LUT öneriliyor.',
       sliderTweaks: {
@@ -647,7 +647,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Geniş aydınlık yüzeyler ve gölgesiz yumuşak geçişler',
       recommendedPreset: 'reze',
       presetName: PRESETS.reze.name,
-      badge: '🌸 CSM Reze',
+      badge: 'CSM Reze',
       explanation:
         'Geniş aydınlık alanlar ve yumuşak ton geçişleri tespit edildi. Parlak yüzeylerin sertçe patlamasını önleyen güçlü H&D omuz sönümlenmesi ve Fuji Pro 400H pastel 3D LUT için CSM Reze tavsiye ediliyor.',
       sliderTweaks: {
@@ -682,7 +682,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Ağır loş ortam ve düşük kromatik canlılık',
       recommendedPreset: 'gotik',
       presetName: PRESETS.gotik.name,
-      badge: '❄️ Gotik',
+      badge: 'Gotik',
       explanation:
         'Koyu ton yoğunluğu ve solgun renk yapısı analiz edildi. Ağır gümüş tutma hissi (ENR 3D LUT) ve dondurucu siyahlar oluşturmak için Gotik banyo öneriliyor.',
       sliderTweaks: {
@@ -722,7 +722,7 @@ export function analyzeAndRecommendRecipe(
       lightingCondition: 'Geniş açık alan, sonsuz derinlik ve zengin ufuk çizgisi',
       recommendedPreset: 'kodachrome',
       presetName: PRESETS.kodachrome.name,
-      badge: '🏞️ Kodachrome 64',
+      badge: 'Kodachrome 64',
       explanation:
         'Geniş ufuk çizgisi ve sonsuz netlik düzlemi tespit edildi. Manzara ufkunun bozulmaması için lens girdabı (swirl) sıfırlandı; Kodachrome 64 3D LUT ve H&D omuz sıkıştırmasıyla zengin dinamik aralık sağlandı.',
       sliderTweaks: {
@@ -755,7 +755,7 @@ export function analyzeAndRecommendRecipe(
     lightingCondition: 'Doğal dengeli dinamik aralık ve orta ton zenginliği',
     recommendedPreset: 'analog',
     presetName: PRESETS.analog.name,
-    badge: '🎞️ Kodak Portra 400',
+    badge: 'Kodak Portra 400',
     explanation:
       'Dengeli orta ton dağılımı ve doğal gün ışığı yapısı belirlendi. Açık ton patlamalarını önleyen H&D film omzu (shoulder) ve tetrahedral 3D LUT renk geçişi için Kodak Portra 400 tavsiye ediliyor.',
     sliderTweaks: {

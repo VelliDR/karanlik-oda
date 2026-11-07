@@ -9,13 +9,14 @@ import {
   isRaw,
   rawMetadata
 } from '../store';
+import { EyeIcon, ZoomIcon, CameraIcon, FolderIcon } from './Icons';
 
 
 interface CanvasViewportProps {
   canvasRef: { current: HTMLCanvasElement | null };
   onFileDrop: (file: File) => void;
   onCanvasClick: (e: MouseEvent) => void;
-  focusPoint?: { x: number; y: number } | null;
+  focusPoint?: { x: number; y: number; depth?: number } | null;
 }
 
 export function CanvasViewport({
@@ -109,12 +110,28 @@ export function CanvasViewport({
           class="max-w-full max-h-[320px] lg:max-h-[600px] rounded-xl shadow-2xl bg-black/60 object-contain"
         />
 
-        {/* 3D Depth Focus Indicator Ring */}
+        {/* 3D Depth Focus Indicator Reticle (Cinema Camera AF Target) */}
         {focusPoint && (
           <div
-            class="pointer-events-none absolute w-10 h-10 -ml-5 -mt-5 rounded-full border-2 border-amber-400 bg-amber-400/20 shadow-lg shadow-amber-500/50 transition-all duration-300 z-30 animate-ping"
+            class="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center select-none transition-all duration-150"
             style={{ left: `${focusPoint.x}px`, top: `${focusPoint.y}px` }}
-          />
+          >
+            {/* Vizör AF Kare Köşeleri */}
+            <div class="w-11 h-11 relative flex items-center justify-center animate-pulse">
+              <div class="absolute top-0 left-0 w-2.5 h-2.5 border-t-2 border-l-2 border-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
+              <div class="absolute top-0 right-0 w-2.5 h-2.5 border-t-2 border-r-2 border-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
+              <div class="absolute bottom-0 left-0 w-2.5 h-2.5 border-b-2 border-l-2 border-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
+              <div class="absolute bottom-0 right-0 w-2.5 h-2.5 border-b-2 border-r-2 border-amber-400 drop-shadow-[0_0_4px_rgba(251,191,36,0.8)]" />
+              <div class="w-1.5 h-1.5 rounded-full bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,1)]" />
+            </div>
+            {/* Dinamik Derinlik & Bölge Rozeti */}
+            {focusPoint.depth !== undefined && (
+              <div class="mt-1 px-1.5 py-0.5 rounded-md bg-black/85 text-[8px] font-mono font-bold text-amber-300 border border-amber-500/50 shadow-xl backdrop-blur-sm whitespace-nowrap">
+                AF: %{Math.round(focusPoint.depth * 100)} (
+                {focusPoint.depth > 0.65 ? 'Ön Plan' : focusPoint.depth > 0.35 ? 'Orta Alan' : 'Arka Plan'})
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -127,14 +144,14 @@ export function CanvasViewport({
             onPointerDown={() => setComparing(true)}
             onPointerUp={() => setComparing(false)}
             onPointerLeave={() => setComparing(false)}
-            class={`pointer-events-auto flex items-center gap-1 text-[10px] font-mono font-bold border px-3 py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
+            class={`pointer-events-auto flex items-center gap-1.5 text-[10px] font-mono font-bold border px-3 py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
               isComparing.value
                 ? 'bg-amber-500 text-neutral-950 border-amber-400 ring-2 ring-amber-500/50'
                 : 'bg-black/75 hover:bg-black/90 text-amber-300 border-neutral-700'
             }`}
             title="Orijinali görmek için basılı tutun (veya Boşluk tuşu)"
           >
-            <span>👁️</span>
+            <EyeIcon class="w-3.5 h-3.5" />
             <span>{isComparing.value ? 'ORİJİNAL NEGATİF' : 'Karşılaştır (Basılı Tut)'}</span>
           </button>
 
@@ -142,14 +159,14 @@ export function CanvasViewport({
           <button
             type="button"
             onClick={toggleZoom}
-            class={`pointer-events-auto flex items-center gap-1 text-[10px] font-mono font-bold border px-2.5 py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
+            class={`pointer-events-auto flex items-center gap-1.5 text-[10px] font-mono font-bold border px-2.5 py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
               isZoomed.value
                 ? 'bg-amber-500 text-neutral-950 border-amber-400'
                 : 'bg-black/75 hover:bg-black/90 text-neutral-300 hover:text-white border-neutral-700'
             }`}
             title="%100 Piksel Gren ve Netlik İnceleme"
           >
-            <span>🔍</span>
+            <ZoomIcon class="w-3.5 h-3.5" />
             <span>{isZoomed.value ? '%100 Büyütüldü' : '%100 Büyüteç'}</span>
           </button>
         </div>
@@ -181,8 +198,8 @@ export function CanvasViewport({
           }}
           class="absolute inset-0 flex flex-col justify-center items-center text-center p-6 bg-neutral-900/95 rounded-2xl cursor-pointer hover:bg-neutral-900 transition-colors"
         >
-          <div class="w-16 h-16 rounded-2xl bg-neutral-800 border border-neutral-700 flex items-center justify-center text-3xl mb-3 shadow-lg group-hover:scale-105 transition-transform">
-            📸
+          <div class="w-16 h-16 rounded-2xl bg-neutral-800 border border-neutral-700 flex items-center justify-center mb-3 shadow-lg group-hover:scale-105 transition-transform">
+            <CameraIcon class="w-8 h-8 text-neutral-400" />
           </div>
           <p class="text-xs font-bold text-white font-mono">
             Banyo edilecek bir fotoğraf seçin veya sürükleyip bırakın
@@ -191,7 +208,8 @@ export function CanvasViewport({
             RAW (.DNG, .CR2, .CR3, .NEF, .ARW, .RAF), Apple HEIC, JPG, PNG
           </p>
           <span class="mt-4 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 transition-all flex items-center gap-1.5 shadow-sm">
-            <span>📂</span> Bilgisayardan / Galeriden Seç
+            <FolderIcon class="w-3.5 h-3.5" />
+            <span>Bilgisayardan / Galeriden Seç</span>
           </span>
         </div>
       )}

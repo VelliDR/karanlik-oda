@@ -1,5 +1,6 @@
 import { sliderSettings, updateSetting, commitSettingToHistory } from '../store';
 import { PrecisionSlider } from './PrecisionSlider';
+import { SunIcon } from './Icons';
 
 export function LightTab() {
   const settings = sliderSettings.value;
@@ -8,7 +9,7 @@ export function LightTab() {
     <div class="space-y-3.5 p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 shadow-md">
       <div class="flex items-center justify-between border-b border-neutral-800/80 pb-2">
         <span class="text-[10px] font-mono tracking-wider font-bold text-amber-400 flex items-center gap-1.5">
-          <span>☀️</span> TEMEL IŞIK & TONLAMA (EV)
+          <SunIcon class="w-3.5 h-3.5 text-amber-400" /> TEMEL IŞIK & TONLAMA (EV)
         </span>
         <span class="text-[8px] font-mono text-neutral-400">Çift tıkla: Sıfırla</span>
       </div>
@@ -83,7 +84,7 @@ export function LightTab() {
 
       <div class="border-t border-neutral-800/60 pt-2">
         <PrecisionSlider
-          label="📈 H&D FİLM OMZU (SHOULDER)"
+          label="H&D FİLM OMZU (SHOULDER)"
           value={settings.shoulder ?? 0}
           min={0}
           max={100}

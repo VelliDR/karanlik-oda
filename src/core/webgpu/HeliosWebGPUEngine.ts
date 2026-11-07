@@ -43,7 +43,10 @@ struct HeliosUniforms {
   hasDepthMap: f32,
   aspectRatio: f32,
   catEye: f32,
-  pad0: vec4<f32>,
+  soapBubble: f32,
+  loca: f32,
+  apertureBlades: f32,
+  bladeCurvature: f32,
   pad1: vec4<f32>,
 };
 
@@ -51,6 +54,12 @@ struct HeliosUniforms {
 @group(0) @binding(1) var imageTexture: texture_2d<f32>;
 @group(0) @binding(2) var depthTexture: texture_2d<f32>;
 @group(0) @binding(3) var texSampler: sampler;
+
+// Jorge Jimenez Interleaved Gradient Noise (IGN)
+// Yüksek frekanslı (mavi gürültü profilli) ekran uzayı gürültüsü
+fn interleaved_gradient_noise(p: vec2<f32>) -> f32 {
+  return fract(52.9829189 * fract(dot(p, vec2<f32>(0.06711056, 0.00583715))));
+}
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
@@ -81,20 +90,29 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let radialCompress = mix(1.0, 0.32, catEyeFactor * (intensity / 100.0) * catEyeStrength);
   let tangentialStretch = mix(1.0, 1.0 + (intensity / 100.0) * 2.8, catEyeFactor);
 
-  // Odak Kalkanı (CoC: Circle of Confusion)
+  // Odak Kalkanı (CoC: Circle of Confusion) ve Odak Yönü
   var coc: f32 = 0.0;
+  var focusSign: f32 = 1.0; // +1.0 = Arka plan (yeşil LoCA saçak), -1.0 = Ön plan (mor/macenta LoCA saçak)
+  var centerZ: f32 = 0.0;
+  var depthThreshold: f32 = 0.0;
+
   if (uniforms.hasDepthMap > 0.5) {
     let z = textureSampleLevel(depthTexture, texSampler, in.uv, 0.0).r;
+    centerZ = z;
     let apertureFactor = uniforms.aperture / 100.0;
     let threshold = 0.35 - apertureFactor * 0.31;
-    let diff = abs(z - uniforms.focalDepth);
-    if (diff > threshold) {
-      coc = clamp((diff - threshold) / 0.16, 0.0, 1.0);
+    depthThreshold = threshold;
+    let diff = z - uniforms.focalDepth;
+    let absDiff = abs(diff);
+    if (absDiff > threshold) {
+      coc = clamp((absDiff - threshold) / 0.16, 0.0, 1.0);
     }
+    focusSign = sign(diff);
   } else {
     // Alan Eğriliği (Field Curvature): Merkez keskin, kenarlara doğru dönen bokeh
     let centerSharpRadius = 0.22;
     coc = smoothstep(centerSharpRadius, 0.85, normDist);
+    focusSign = 1.0;
   }
 
   if (coc <= 0.001) {
@@ -106,31 +124,114 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
   // Vogel Disk Spiral Örnekleme (28 örnek)
   // Golden Angle ~ 2.39996323 rad (137.50776°)
+  let PI: f32 = 3.1415926535;
   let GOLDEN_ANGLE: f32 = 2.39996323;
   let SAMPLE_COUNT: f32 = 28.0;
 
   var accumColor = vec3<f32>(0.0);
   var accumWeight: f32 = 0.0;
 
+  let bubbleFactor = uniforms.soapBubble / 100.0;
+  let locaStrength = (uniforms.loca / 100.0) * 0.048 * coc * focusSign;
+
+  // 🐱 Fiziksel Vesica Piscis (İki Çember Arakesiti Kedi Gözü Tüp Kayması)
+  let barrelShift = catEyeFactor * (intensity / 100.0) * catEyeStrength * 0.85;
+
+  // ⬡ Prosedürel Diyafram Bıçakları (N-gen parametreleri)
+  let hasBlades = uniforms.apertureBlades > 2.0;
+  let bladeN = uniforms.apertureBlades;
+  let bladeAlpha = (2.0 * PI) / max(bladeN, 3.0);
+  let bladeCurvature = clamp(uniforms.bladeCurvature / 100.0, 0.0, 1.0);
+
+  // 🎲 Blue Noise / IGN Açısal Rotasyon Jitter:
+  // Her pikselin örnekleme spiralini yüksek frekanslı mavi gürültü açısıyla döndürerek
+  // konsantrik basamak/halkalanmayı (banding) analog film dokusuna dönüştürür.
+  let pixelPos = in.position.xy;
+  let ignAngle = interleaved_gradient_noise(pixelPos) * (2.0 * PI);
+
   for (var i = 0; i < 28; i++) {
     let fi = f32(i);
-    let r = sqrt((fi + 0.5) / SAMPLE_COUNT);
-    let theta = fi * GOLDEN_ANGLE;
+    // Yarıçap ditheringi (örnekler arası radyal adımları yumuşatır)
+    let radJitter = (interleaved_gradient_noise(pixelPos + vec2<f32>(fi * 3.17, fi * 7.13)) - 0.5) * 0.28;
+    let r = sqrt(clamp((fi + 0.5 + radJitter) / SAMPLE_COUNT, 0.02, 1.0));
+    let theta = fi * GOLDEN_ANGLE + ignAngle;
     let diskSample = vec2<f32>(r * cos(theta), r * sin(theta));
 
-    // Teğetsel ve radyal deformasyon dönüşümü
-    let sampleOffset = (diskSample.x * radVec * radialCompress + diskSample.y * tanVec * tangentialStretch) * maxBlur;
-    let sampleUV = in.uv + vec2<f32>(sampleOffset.x / aspect, sampleOffset.y);
-    let clampedUV = clamp(sampleUV, vec2<f32>(0.0), vec2<f32>(1.0));
+    // 1. 🐱 Analitik Vesica Piscis Kedi Gözü Sınır Kırpması:
+    // Lensin ön ve arka tüp çerçevelerinin eğik ışık demetini çift taraflı kesmesi
+    var pupilWeight: f32 = 1.0;
+    if (barrelShift > 0.001) {
+      let dFront = length(vec2<f32>(diskSample.x - barrelShift * 0.65, diskSample.y));
+      let dRear  = length(vec2<f32>(diskSample.x + barrelShift * 0.65, diskSample.y));
+      let maxBarrelD = max(dFront, dRear);
+      pupilWeight = smoothstep(1.08, 0.85, maxBarrelD);
+    }
 
-    let col = textureSampleLevel(imageTexture, texSampler, clampedUV, 0.0);
+    // 2. ⬡ Prosedürel Diyafram Bıçakları Poligon Testi:
+    var bladeClip: f32 = 1.0;
+    if (hasBlades) {
+      let phi = atan2(diskSample.y, diskSample.x);
+      let thetaC = phi - bladeAlpha * floor(phi / bladeAlpha + 0.5);
+      let polyRadius = cos(PI / bladeN) / max(cos(thetaC), 0.0001);
+      let bladeMaxR = mix(1.0, polyRadius, bladeCurvature);
+      bladeClip = smoothstep(bladeMaxR + 0.06, bladeMaxR - 0.06, r);
+    }
+
+    // Teğetsel ve radyal deformasyon dönüşümü (Swirl & Cat-Eye)
+    let sampleOffset = (diskSample.x * radVec * radialCompress + diskSample.y * tanVec * tangentialStretch) * maxBlur;
+
+    // 3. 🛡️ Jorge Jimenez / Earl Hammon Ön Plan Sızıntı Kalkanı (Foreground Bleed Shield):
+    // Arka plan pikselleri bulanıklaşırken keskin ön plan nesnelerinden örnek topladığında
+    // oluşan çirkin renk sızıntısı (bleed/halo) kusurunu tamamen engeller.
+    var bleedShield: f32 = 1.0;
+    if (uniforms.hasDepthMap > 0.5 && maxBlur > 0.0001) {
+      let sampleRawUV = in.uv + vec2<f32>(sampleOffset.x / aspect, sampleOffset.y);
+      let sUV = clamp(sampleRawUV, vec2<f32>(0.0), vec2<f32>(1.0));
+      let sampleZ = textureSampleLevel(depthTexture, texSampler, sUV, 0.0).r;
+      let depthDiff = sampleZ - centerZ;
+      if (depthDiff < -0.035) {
+        // Örnek noktası merkez pikselin belirgin şekilde önünde (ön plan nesnesi)
+        let sampleDistToFocal = abs(sampleZ - uniforms.focalDepth);
+        let sampleCoC = clamp((sampleDistToFocal - depthThreshold) / 0.16, 0.0, 1.0);
+        bleedShield = smoothstep(0.0, 0.40, sampleCoC);
+      }
+    }
+
+    var col: vec3<f32>;
+    if (uniforms.loca > 0.0) {
+      // 🌈 Boyuna Kromatik Sapma (LoCA / Spectral Bokeh Fringing):
+      // Dalga boyuna göre z-ekseni dispersiyonu:
+      // Arka planda Yeşil dış çepere taşar, Kırmızı/Mavi içte kalır.
+      // Ön planda Mor/Macenta dış çepere taşar.
+      let offsetR = sampleOffset * (1.0 - locaStrength);
+      let offsetG = sampleOffset * (1.0 + locaStrength * 0.70);
+      let offsetB = sampleOffset * (1.0 - locaStrength * 0.85);
+
+      let uvR = clamp(in.uv + vec2<f32>(offsetR.x / aspect, offsetR.y), vec2<f32>(0.0), vec2<f32>(1.0));
+      let uvG = clamp(in.uv + vec2<f32>(offsetG.x / aspect, offsetG.y), vec2<f32>(0.0), vec2<f32>(1.0));
+      let uvB = clamp(in.uv + vec2<f32>(offsetB.x / aspect, offsetB.y), vec2<f32>(0.0), vec2<f32>(1.0));
+
+      let colR = textureSampleLevel(imageTexture, texSampler, uvR, 0.0).r;
+      let colG = textureSampleLevel(imageTexture, texSampler, uvG, 0.0).g;
+      let colB = textureSampleLevel(imageTexture, texSampler, uvB, 0.0).b;
+      col = vec3<f32>(colR, colG, colB);
+    } else {
+      let sampleUV = in.uv + vec2<f32>(sampleOffset.x / aspect, sampleOffset.y);
+      let clampedUV = clamp(sampleUV, vec2<f32>(0.0), vec2<f32>(1.0));
+      col = textureSampleLevel(imageTexture, texSampler, clampedUV, 0.0).rgb;
+    }
+
+    // 🫧 Sabun Köpüğü Halka Bokeh (Soap Bubble / Annular Rim Profile):
+    // Küresel sapma sebebiyle bokeh diskinin dış çeperi (r > 0.65) parıldayan parlak bir halkaya bürünür
+    let rimBoost = mix(1.0, mix(0.72, 1.0 + 3.2 * smoothstep(0.65, 0.98, r), smoothstep(0.35, 0.70, r)), bubbleFactor);
 
     // Fotometrik Vurgu Patlamaları (Specular Highlights):
     // Parlak noktalara üssel ağırlık vererek kremamsı ışık pullarını öne çıkar
-    let luma = dot(col.rgb, vec3<f32>(0.299, 0.587, 0.114));
-    let weight = 1.0 + pow(clamp(luma, 0.0, 1.0), 4.0) * 14.0;
+    let luma = dot(col, vec3<f32>(0.299, 0.587, 0.114));
+    let specularWeight = 1.0 + pow(clamp(luma, 0.0, 1.0), 4.0) * 14.0;
+    let weight = specularWeight * rimBoost * pupilWeight * bladeClip * bleedShield;
 
-    accumColor += col.rgb * weight;
+    accumColor += col * weight;
     accumWeight += weight;
   }
 
@@ -343,7 +444,11 @@ export class HeliosWebGPUEngine {
       uniformData[5] = hasDepth;
       uniformData[6] = aspect;
       uniformData[7] = params.catEye ?? 100.0;
-      // [8..15] pad alanları sıfır kalır
+      uniformData[8] = params.soapBubble ?? 0.0;
+      uniformData[9] = params.loca ?? 0.0;
+      uniformData[10] = params.apertureBlades ?? 0.0;
+      uniformData[11] = params.bladeCurvature ?? 85.0;
+      // [12..15] pad alanları sıfır kalır
 
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 

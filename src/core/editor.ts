@@ -63,6 +63,10 @@ export const DEFAULT_SETTINGS: SliderSettings = {
   skinProtection: 0,
 
   swirl: 0,
+  soapBubble: 0,
+  loca: 0,
+  apertureBlades: 0,
+  bladeCurvature: 85,
   chromatic: 0,
   proMist: 0,
   vignette: 0,
@@ -553,6 +557,14 @@ export class PhotoEditor {
           this.depthProgress = 100;
           this.depthStatusMessage = '3D Alan Derinliği Aktif';
           if (onProgress) onProgress(100, this.depthStatusMessage);
+
+          // 🎯 Akıllı Otomatik Odak: Eğer odak henüz varsayılan 0.5 ise,
+          // sahnedeki ana özneyi (portre / nesne) otomatik tespit et ve kilitlen
+          if (this.settings.aiFocalDepth === 0.5) {
+            const detectedZ = this.detectPrimarySubjectDepth();
+            this.settings.aiFocalDepth = detectedZ;
+          }
+
           this.render();
           resolve();
         } else if (data.type === 'error') {
@@ -572,6 +584,7 @@ export class PhotoEditor {
 
   /**
    * Tuval üzerinde tıklanan koordinattaki (0.0 - 1.0 aralığında) derinlik değerini döndürür.
+   * 7x7 Bilateral Gauss uzamsal çekirdeği ile sınır artefaktlarını ve tek piksel gürültülerini filtreler.
    */
   public sampleDepthAt(normalizedX: number, normalizedY: number): number {
     if (!this.depthCanvas) return 0.5;
@@ -582,19 +595,148 @@ export class PhotoEditor {
     const clampedNormX = Math.max(0, Math.min(1.0, normalizedX));
     const clampedNormY = Math.max(0, Math.min(1.0, normalizedY));
 
-    const x = Math.min(w - 1, Math.max(0, Math.floor(clampedNormX * w)));
-    const y = Math.min(h - 1, Math.max(0, Math.floor(clampedNormY * h)));
+    const cx = Math.min(w - 1, Math.max(0, Math.floor(clampedNormX * w)));
+    const cy = Math.min(h - 1, Math.max(0, Math.floor(clampedNormY * h)));
 
     const ctx = this.depthCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
     if (!ctx) return 0.5;
 
     try {
-      const pixel = ctx.getImageData(x, y, 1, 1).data;
-      const sampled = pixel[0] / 255;
-      return Number.isFinite(sampled) ? Math.max(0, Math.min(1.0, sampled)) : 0.5;
+      const radius = 3; // 7x7 pencere
+      const startX = Math.max(0, cx - radius);
+      const startY = Math.max(0, cy - radius);
+      const endX = Math.min(w - 1, cx + radius);
+      const endY = Math.min(h - 1, cy + radius);
+      const boxW = endX - startX + 1;
+      const boxH = endY - startY + 1;
+
+      const imgData = ctx.getImageData(startX, startY, boxW, boxH).data;
+      const centerIdx = ((cy - startY) * boxW + (cx - startX)) * 4;
+      const centerZ = imgData[centerIdx] / 255;
+
+      let sumWeight = 0;
+      let sumDepth = 0;
+
+      for (let py = 0; py < boxH; py++) {
+        for (let px = 0; px < boxW; px++) {
+          const curX = startX + px;
+          const curY = startY + py;
+          const dx = curX - cx;
+          const dy = curY - cy;
+          const d2 = dx * dx + dy * dy;
+
+          // Uzamsal Gauss ağırlığı (sigma ~ 1.8)
+          const spatialWeight = Math.exp(-d2 / 6.48);
+
+          const idx = (py * boxW + px) * 4;
+          const sampleZ = imgData[idx] / 255;
+
+          // Bilateral menzil ağırlığı: Keskin kenarlarda arka planın ön plana sızmasını engeller
+          const zDiff = sampleZ - centerZ;
+          const rangeWeight = Math.exp(-(zDiff * zDiff) / 0.045);
+
+          const totalWeight = spatialWeight * rangeWeight;
+          sumDepth += sampleZ * totalWeight;
+          sumWeight += totalWeight;
+        }
+      }
+
+      const robustZ = sumWeight > 0.001 ? sumDepth / sumWeight : centerZ;
+      return Number.isFinite(robustZ) ? Math.max(0, Math.min(1.0, robustZ)) : 0.5;
     } catch {
       return 0.5;
     }
+  }
+
+  /**
+   * 🤖 Sahnedeki birincil öznenin (portre / insan / ön plan objesi) derinlik katmanını tespit eder.
+   * Merkez ağırlıklı histogram analizi ile ana nesnenin odak düzlemini bulur.
+   */
+  public detectPrimarySubjectDepth(): number {
+    if (!this.depthCanvas) return 0.5;
+    const w = this.depthCanvas.width;
+    const h = this.depthCanvas.height;
+    if (w <= 0 || h <= 0) return 0.5;
+
+    const ctx = this.depthCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    if (!ctx) return 0.5;
+
+    try {
+      // Merkezin %60'lık alanını tara (kenar vinyetlerini ve boş arka planı eler)
+      const minX = Math.floor(w * 0.20);
+      const maxX = Math.floor(w * 0.80);
+      const minY = Math.floor(h * 0.15);
+      const maxY = Math.floor(h * 0.85);
+      const regionW = maxX - minX;
+      const regionH = maxY - minY;
+
+      const imgData = ctx.getImageData(minX, minY, regionW, regionH).data;
+
+      // 32-kutu derinlik histogramı
+      const BINS = 32;
+      const hist = new Float32Array(BINS);
+
+      const midX = regionW / 2;
+      const midY = regionH / 2;
+
+      // Performans için her 3 pikselde bir örnekle
+      const step = Math.max(1, Math.floor(Math.min(regionW, regionH) / 120));
+
+      for (let y = 0; y < regionH; y += step) {
+        for (let x = 0; x < regionW; x += step) {
+          const idx = (y * regionW + x) * 4;
+          const z = imgData[idx] / 255;
+
+          // Merkeze yakın piksellere hafif ilave öncelik
+          const ndx = (x - midX) / midX;
+          const ndy = (y - midY) / midY;
+          const centerWeight = 1.0 - 0.45 * (ndx * ndx + ndy * ndy);
+
+          const bin = Math.min(BINS - 1, Math.max(0, Math.floor(z * BINS)));
+          hist[bin] += Math.max(0.1, centerWeight);
+        }
+      }
+
+      // Ön/orta plandaki (bin >= 8, yani Z >= 0.25) en yüksek tepe noktasını ara
+      let bestBin = -1;
+      let maxCount = -1;
+
+      // 1. Önce ön/orta plandaki tepeye bak (Z >= 0.35)
+      for (let b = Math.floor(BINS * 0.35); b < BINS; b++) {
+        if (hist[b] > maxCount) {
+          maxCount = hist[b];
+          bestBin = b;
+        }
+      }
+
+      // Eğer ön planda belirgin bir tepe yoksa tüm sahnenin tepesine bak
+      if (bestBin < 0 || maxCount < 10) {
+        for (let b = 0; b < BINS; b++) {
+          if (hist[b] > maxCount) {
+            maxCount = hist[b];
+            bestBin = b;
+          }
+        }
+      }
+
+      if (bestBin >= 0) {
+        // Kutu merkezini döndür
+        const detectedZ = (bestBin + 0.5) / BINS;
+        return Math.max(0.05, Math.min(0.95, detectedZ));
+      }
+      return 0.5;
+    } catch {
+      return 0.5;
+    }
+  }
+
+  /**
+   * Sahnedeki ana özneye otomatik olarak kilitlenir (AF).
+   */
+  public autoFocusOnSubject(): number {
+    const autoZ = this.detectPrimarySubjectDepth();
+    this.setAiFocalDepth(autoZ);
+    return autoZ;
   }
 
   public async setAiDepthEnabled(

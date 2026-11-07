@@ -7,6 +7,7 @@ import {
   isRaw
 } from '../store';
 import { FilmBorder, ExportFormat } from '../../core/types';
+import { StampIcon, CalendarIcon, PrinterIcon, SaveIcon } from './Icons';
 
 interface FinishingTabProps {
   onExport: () => void;
@@ -27,16 +28,16 @@ export function FinishingTab({ onExport, isExporting }: FinishingTabProps) {
   ];
 
   const formats: { id: ExportFormat; label: string; badge: string }[] = [
-    { id: 'image/png', label: '💎 PNG', badge: 'Kayıpsız' },
-    { id: 'image/jpeg', label: '📸 JPG', badge: 'Maks. Kalite' },
-    { id: 'image/webp', label: '⚡ WebP', badge: 'Hafif & Hızlı' }
+    { id: 'image/png', label: 'PNG', badge: 'Kayıpsız' },
+    { id: 'image/jpeg', label: 'JPG', badge: 'Maks. Kalite' },
+    { id: 'image/webp', label: 'WebP', badge: 'Hafif & Hızlı' }
   ];
 
   return (
     <div class="space-y-3.5 p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 shadow-md">
       <div class="flex items-center justify-between border-b border-neutral-800/80 pb-2">
         <span class="text-[10px] font-mono tracking-wider font-bold text-amber-400 flex items-center gap-1.5">
-          <span>🏷️</span> BASKI & DIŞA AKTARMA (300 DPI)
+          <StampIcon class="w-3.5 h-3.5 text-amber-400" /> BASKI & DIŞA AKTARMA (300 DPI)
         </span>
         <span class="text-[8px] font-mono text-emerald-400">Arşivsel Fine-Art</span>
       </div>
@@ -44,8 +45,8 @@ export function FinishingTab({ onExport, isExporting }: FinishingTabProps) {
       {/* 90'lar Quartz Date Damgası */}
       <div class="bg-neutral-950/80 p-3 rounded-xl border border-neutral-800 space-y-2">
         <div class="flex justify-between items-center">
-          <span class="text-[10px] font-mono font-semibold text-amber-400">
-            📅 90'LAR QUARTZ DATE DAMGASI
+          <span class="text-[10px] font-mono font-semibold text-amber-400 flex items-center gap-1.5">
+            <CalendarIcon class="w-3 h-3 text-amber-400" /> 90'LAR QUARTZ DATE DAMGASI
           </span>
           <label class="relative inline-flex items-center cursor-pointer">
             <input
@@ -111,8 +112,8 @@ export function FinishingTab({ onExport, isExporting }: FinishingTabProps) {
       {/* 300 DPI Laboratuvar Baskı Hesaplayıcısı */}
       <div class="bg-neutral-950/80 p-3 rounded-xl border border-neutral-800 space-y-2">
         <div class="flex justify-between items-center">
-          <span class="text-[10px] font-mono font-semibold text-emerald-400">
-            🖨️ 300 DPI BASKI HESAPLAYICISI
+          <span class="text-[10px] font-mono font-semibold text-emerald-400 flex items-center gap-1.5">
+            <PrinterIcon class="w-3.5 h-3.5 text-emerald-400" /> 300 DPI BASKI HESAPLAYICISI
           </span>
           <span class="text-[8px] px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-700/60 text-emerald-300 font-mono font-bold">
             Arşivsel Standart
@@ -143,10 +144,10 @@ export function FinishingTab({ onExport, isExporting }: FinishingTabProps) {
           <span class="text-neutral-300">DIŞA AKTARMA FORMATI</span>
           <span class="text-[9px] px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-800 text-emerald-300 font-bold">
             {activeFormat === 'image/png'
-              ? '💎 PNG (Kayıpsız)'
+              ? 'PNG (Kayıpsız)'
               : activeFormat === 'image/jpeg'
-              ? '📸 JPG (300 DPI)'
-              : '⚡ WebP'}
+              ? 'JPG (300 DPI)'
+              : 'WebP'}
           </span>
         </div>
 
@@ -182,7 +183,7 @@ export function FinishingTab({ onExport, isExporting }: FinishingTabProps) {
         onClick={onExport}
         class="w-full py-3.5 px-4 rounded-xl text-xs font-mono font-bold tracking-wider transition-all shadow-lg active:scale-98 cursor-pointer disabled:opacity-30 disabled:pointer-events-none bg-amber-500 hover:bg-amber-400 text-neutral-950 flex items-center justify-center gap-2"
       >
-        <span>💾</span>
+        <SaveIcon class="w-4 h-4 text-neutral-950" />
         <span>
           {isExporting ? 'İŞLENİYOR & MÜHÜRLENİYOR...' : 'TAM ÇÖZÜNÜRLÜKTE KAYDET (300 DPI)'}
         </span>

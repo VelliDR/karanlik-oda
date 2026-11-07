@@ -8,7 +8,7 @@ import {
 } from '../store';
 import { PresetDeck } from './PresetDeck';
 import { PrecisionSlider } from './PrecisionSlider';
-
+import { SparklesIcon, CheckIcon } from './Icons';
 
 interface FilmTabProps {
   onLoadCubeLut?: (file: File) => void;
@@ -27,23 +27,20 @@ export function FilmTab({
 
   return (
     <div class="space-y-3.5 p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 shadow-md">
-      {/* 🤖 AKILLI REÇETE AI ASİSTANI */}
+      {/* AKILLI REÇETE AI ASİSTANI */}
       <div class="bg-gradient-to-br from-neutral-900 to-neutral-950 p-2.5 rounded-xl border border-amber-500/30 space-y-2 shadow-inner">
         <div class="flex justify-between items-center">
           <span class="text-[9px] text-amber-300 font-mono tracking-wider font-bold flex items-center gap-1.5">
-            <span>✨</span> AKILLI REÇETE ASİSTANI (AI)
+            <SparklesIcon class="w-3.5 h-3.5 text-amber-400" /> AKILLI REÇETE ASİSTANI (AI)
           </span>
           <button
             type="button"
             disabled={!imageLoaded.value || isAnalyzing}
             onClick={onAnalyzeSmartRecipe}
-            class="px-2.5 py-1 text-[9px] font-mono font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg cursor-pointer transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1"
+            class="px-2.5 py-1 text-[9px] font-mono font-bold bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 rounded-lg cursor-pointer transition-all active:scale-95 disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1.5"
           >
-            {isAnalyzing ? (
-              <span>⏳ Analiz Ediliyor...</span>
-            ) : (
-              <span>🔍 Sahneyi Analiz Et</span>
-            )}
+            <SparklesIcon class="w-3 h-3 text-amber-300" />
+            <span>{isAnalyzing ? 'Analiz Ediliyor...' : 'Sahneyi Analiz Et'}</span>
           </button>
         </div>
 
@@ -51,13 +48,12 @@ export function FilmTab({
           <div class="space-y-1.5 bg-black/40 p-2.5 rounded-xl border border-white/10 animate-fade-in">
             <div class="flex items-center justify-between text-[9px] font-mono">
               <span class="font-bold text-amber-300 bg-amber-500/20 px-2 py-0.5 rounded border border-amber-500/30">
-                🎬 {suggestion.sceneTitle}
+                {suggestion.sceneTitle}
               </span>
               <span class="text-white/60">
                 %{suggestion.confidencePercent} Uyum
               </span>
             </div>
-
 
             <p class="text-[8px] text-neutral-300 font-mono leading-relaxed border-t border-neutral-800 pt-1">
               {suggestion.explanation}
@@ -68,7 +64,7 @@ export function FilmTab({
               onClick={onApplySmartRecipe}
               class="w-full py-1.5 px-3 text-[10px] font-mono font-bold bg-amber-500 hover:bg-amber-400 text-black rounded-lg transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center gap-1.5"
             >
-              <span>🧪</span> REÇETEYİ VE OPTİK AYARLARI UYGULA
+              <CheckIcon class="w-3.5 h-3.5" /> REÇETEYİ VE OPTİK AYARLARI UYGULA
             </button>
           </div>
         )}
@@ -86,7 +82,7 @@ export function FilmTab({
         </span>
 
         <PrecisionSlider
-          label="🔴 650NM SPEKTRAL HALASYON"
+          label="650NM SPEKTRAL HALASYON"
           value={settings.halation}
           min={0}
           max={100}
@@ -98,7 +94,7 @@ export function FilmTab({
         />
 
         <PrecisionSlider
-          label="☀️ IŞIK SIZINTISI (LIGHT LEAK)"
+          label="IŞIK SIZINTISI (LIGHT LEAK)"
           value={settings.lightLeak}
           min={0}
           max={100}
@@ -110,7 +106,7 @@ export function FilmTab({
         />
 
         <PrecisionSlider
-          label="🎞️ 35MM FİLM GRENİ"
+          label="35MM FİLM GRENİ"
           value={settings.grain}
           min={0}
           max={100}
@@ -121,7 +117,7 @@ export function FilmTab({
         />
 
         <PrecisionSlider
-          label="🧪 BLEACH BYPASS (GÜMÜŞ KORUMA)"
+          label="BLEACH BYPASS (GÜMÜŞ KORUMA)"
           value={settings.bleachBypass}
           min={0}
           max={100}

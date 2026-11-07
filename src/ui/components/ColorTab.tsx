@@ -1,5 +1,6 @@
 import { sliderSettings, updateSetting, commitSettingToHistory } from '../store';
 import { PrecisionSlider } from './PrecisionSlider';
+import { PaletteIcon } from './Icons';
 
 export function ColorTab() {
   const settings = sliderSettings.value;
@@ -8,7 +9,7 @@ export function ColorTab() {
     <div class="space-y-3.5 p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 shadow-md">
       <div class="flex items-center justify-between border-b border-neutral-800/80 pb-2">
         <span class="text-[10px] font-mono tracking-wider font-bold text-amber-400 flex items-center gap-1.5">
-          <span>🎨</span> RENK DENGESİ & WB
+          <PaletteIcon class="w-3.5 h-3.5 text-amber-400" /> RENK DENGESİ & WB
         </span>
         <span class="text-[8px] font-mono text-neutral-400">Bradford & Oklab</span>
       </div>
@@ -61,7 +62,7 @@ export function ColorTab() {
 
       <div class="border-t border-neutral-800/60 pt-2">
         <PrecisionSlider
-          label="🛡️ AKILLI TEN KORUMA KALKANI"
+          label="AKILLI TEN KORUMA KALKANI"
           value={settings.skinProtection}
           min={0}
           max={100}

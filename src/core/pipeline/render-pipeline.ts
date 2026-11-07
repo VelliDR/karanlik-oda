@@ -210,7 +210,11 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
       settings.swirl,
       settings.aiDepthEnabled ? activeDepthCanvas : null,
       settings.aiFocalDepth,
-      settings.aiDepthAperture
+      settings.aiDepthAperture,
+      settings.soapBubble ?? 0,
+      settings.loca ?? 0,
+      settings.apertureBlades ?? 0,
+      settings.bladeCurvature ?? 85
     );
   }
 

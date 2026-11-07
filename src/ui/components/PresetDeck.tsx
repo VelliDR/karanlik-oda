@@ -1,7 +1,7 @@
 import { useRef } from 'preact/hooks';
 import { PRESETS } from '../../core/presets';
 import { sliderSettings, setPreset, activePresetDescription } from '../store';
-
+import { CubeIcon } from './Icons';
 
 interface PresetDeckProps {
   onLoadCubeLut?: (file: File) => void;
@@ -31,10 +31,11 @@ export function PresetDeck({ onLoadCubeLut }: PresetDeckProps) {
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          class="px-2 py-0.5 text-[9px] font-mono font-bold bg-amber-950/80 hover:bg-amber-900/60 text-amber-300 border border-amber-600/60 rounded-lg cursor-pointer transition-colors shadow-sm"
+          class="px-2 py-1 text-[9px] font-mono font-bold bg-amber-950/80 hover:bg-amber-900/60 text-amber-300 border border-amber-600/60 rounded-lg cursor-pointer transition-colors shadow-sm flex items-center gap-1.5"
           title="Harici 33x33x33 veya 65x65x65 .CUBE 3D LUT profili yükle"
         >
-          🧊 .CUBE Yükle
+          <CubeIcon class="w-3 h-3 text-amber-400" />
+          <span>.CUBE Yükle</span>
         </button>
         <input
           ref={fileInputRef}

@@ -106,7 +106,7 @@ export const PRESETS: Record<PresetKey, PresetDefinition> = {
   cinestill: {
     id: 'cinestill',
     name: 'CineStill 800T',
-    badge: '🎬 500T',
+    badge: '500T',
     noise: 0.14,
     defaultShoulder: 64,
     defaultHalation: 68,
@@ -123,7 +123,7 @@ export const PRESETS: Record<PresetKey, PresetDefinition> = {
   nordic: {
     id: 'nordic',
     name: 'Leica Nordic',
-    badge: '🌾',
+    badge: 'NORDIC',
     noise: 0.06,
     defaultShoulder: 62,
     defaultHalation: 8,
@@ -157,7 +157,7 @@ export const PRESETS: Record<PresetKey, PresetDefinition> = {
   vampir: {
     id: 'vampir',
     name: 'Vampir',
-    badge: '🩸 E-6',
+    badge: 'E-6',
     noise: 0.12,
     defaultShoulder: 54,
     defaultHalation: 42,
@@ -174,7 +174,7 @@ export const PRESETS: Record<PresetKey, PresetDefinition> = {
   gotik: {
     id: 'gotik',
     name: 'Gotik',
-    badge: '❄️ ENR',
+    badge: 'ENR',
     noise: 0.09,
     defaultShoulder: 58,
     defaultHalation: 10,

@@ -1,16 +1,25 @@
 import { activeTab } from '../store';
 import { ToolTab } from '../types';
+import {
+  SunIcon,
+  PaletteIcon,
+  FilmIcon,
+  ApertureIcon,
+  HistogramIcon,
+  StampIcon
+} from './Icons';
+import { ComponentChildren } from 'preact';
 
 export function ToolRail() {
   const currentTab = activeTab.value;
 
-  const tabs: { id: ToolTab; label: string; icon: string }[] = [
-    { id: 'light', label: 'Işık', icon: '☀️' },
-    { id: 'color', label: 'Renk', icon: '🎨' },
-    { id: 'film', label: 'Film', icon: '🎞️' },
-    { id: 'optics', label: 'Optik', icon: '🔍' },
-    { id: 'histogram', label: 'Histogram', icon: '📊' },
-    { id: 'finishing', label: 'Baskı', icon: '🏷️' }
+  const tabs: { id: ToolTab; label: string; icon: ComponentChildren }[] = [
+    { id: 'light', label: 'Işık', icon: <SunIcon class="w-3.5 h-3.5" /> },
+    { id: 'color', label: 'Renk', icon: <PaletteIcon class="w-3.5 h-3.5" /> },
+    { id: 'film', label: 'Film', icon: <FilmIcon class="w-3.5 h-3.5" /> },
+    { id: 'optics', label: 'Optik', icon: <ApertureIcon class="w-3.5 h-3.5" /> },
+    { id: 'histogram', label: 'Histogram', icon: <HistogramIcon class="w-3.5 h-3.5" /> },
+    { id: 'finishing', label: 'Baskı', icon: <StampIcon class="w-3.5 h-3.5" /> }
   ];
 
   return (
@@ -30,7 +39,7 @@ export function ToolRail() {
                 : 'text-neutral-400 hover:text-white hover:bg-neutral-800/60'
             }`}
           >
-            <span>{tab.icon}</span>
+            <span class="flex items-center justify-center">{tab.icon}</span>
             <span>{tab.label}</span>
           </button>
         );

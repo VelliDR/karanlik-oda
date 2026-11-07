@@ -44,6 +44,10 @@ export interface EditSettingsAnalog {
 
 export interface EditSettingsOptics {
   swirl: number;        // 0 to 100 (Helios 44M)
+  soapBubble: number;   // 0 to 100 (Sabun Köpüğü Halka Bokeh)
+  loca: number;         // 0 to 100 (Boyuna Kromatik Sapma / LoCA)
+  apertureBlades: number; // 0 = Dairesel, 6 = 44M, 8 = 44-2
+  bladeCurvature: number; // 0 to 100
   chromatic: number;    // 0 to 100 (Kromatik Sapma)
   proMist: number;      // 0 to 100 (Black Pro-Mist)
   depth: {
@@ -104,6 +108,10 @@ export const DEFAULT_EDIT_SETTINGS: EditSettings = {
   },
   optics: {
     swirl: 0,
+    soapBubble: 0,
+    loca: 0,
+    apertureBlades: 0,
+    bladeCurvature: 85,
     chromatic: 0,
     proMist: 0,
     depth: {
