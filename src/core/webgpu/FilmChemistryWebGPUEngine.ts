@@ -373,7 +373,7 @@ fn fs_reticulation(in: VertexOutput) -> @location(0) vec4<f32> {
   let ridge2 = 1.0 - smoothstep(0.0, uRetic.ridgeWidth, w2.f2 - w2.f1);
   let ridge = (ridge1 + uRetic.secondaryWeight * ridge2) / (1.0 + uRetic.secondaryWeight);
 
-  let dir = w1.dir * 0.78 + w2.dir * 0.22;
+  let dir = w1.dir * (1.0 - ridge1) * 0.78 + w2.dir * (1.0 - ridge2) * 0.22;
   let sampleX = f32(px) + uRetic.dispScalePx * dir.x;
   let sampleY = f32(py) + uRetic.dispScalePx * dir.y;
 

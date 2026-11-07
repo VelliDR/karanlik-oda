@@ -417,26 +417,26 @@ export function applyReticulationCPU(
   const dstData = srcImg.data;
 
   const pxPerMm = computeNegativePxPerMm(w, h);
-  const invPxPerMm = 1.0 / pxPerMm;
-  const invPitch = 1.0 / RETICULATION_CELL_PITCH_MM;
-  const dispScalePx = retic * RETICULATION_MAX_DISPLACEMENT_MM * pxPerMm;
-  const densityAmp = retic * RETICULATION_MAX_DENSITY_MOD;
+  const invPxPerMm = Math.fround(1.0 / pxPerMm);
+  const invPitch = Math.fround(1.0 / RETICULATION_CELL_PITCH_MM);
+  const dispScalePx = Math.fround(retic * RETICULATION_MAX_DISPLACEMENT_MM * pxPerMm);
+  const densityAmp = Math.fround(retic * RETICULATION_MAX_DENSITY_MOD);
+  const secFreq = Math.fround(RETICULATION_SECONDARY_FREQ);
 
   const linRgb: [number, number, number] = [0, 0, 0];
 
   for (let y = 0; y < h; y++) {
-    const mmY = (y + 0.5) * invPxPerMm;
+    const mmY = Math.fround((y + 0.5) * invPxPerMm);
+    const vCell = Math.fround(mmY * invPitch);
     const rowOff = y * w;
     for (let x = 0; x < w; x++) {
-      const mmX = (x + 0.5) * invPxPerMm;
-
-      const uCell = mmX * invPitch;
-      const vCell = mmY * invPitch;
+      const mmX = Math.fround((x + 0.5) * invPxPerMm);
+      const uCell = Math.fround(mmX * invPitch);
 
       const w1 = evalWorleyOctave(uCell, vCell, 0x27d4eb2d);
       const w2 = evalWorleyOctave(
-        uCell * RETICULATION_SECONDARY_FREQ,
-        vCell * RETICULATION_SECONDARY_FREQ,
+        Math.fround(uCell * secFreq),
+        Math.fround(vCell * secFreq),
         0x165667b1
       );
 
@@ -444,11 +444,11 @@ export function applyReticulationCPU(
       const ridge2 = 1.0 - smoothstep(0.0, RETICULATION_RIDGE_WIDTH, w2.f2 - w2.f1);
       const ridge = (ridge1 + RETICULATION_SECONDARY_WEIGHT * ridge2) / (1.0 + RETICULATION_SECONDARY_WEIGHT);
 
-      const dirX = w1.dirX * 0.78 + w2.dirX * 0.22;
-      const dirY = w1.dirY * 0.78 + w2.dirY * 0.22;
+      const dirX = w1.dirX * (1.0 - ridge1) * 0.78 + w2.dirX * (1.0 - ridge2) * 0.22;
+      const dirY = w1.dirY * (1.0 - ridge1) * 0.78 + w2.dirY * (1.0 - ridge2) * 0.22;
 
-      const sampleX = x + dispScalePx * dirX;
-      const sampleY = y + dispScalePx * dirY;
+      const sampleX = Math.fround(x + Math.fround(dispScalePx * dirX));
+      const sampleY = Math.fround(y + Math.fround(dispScalePx * dirY));
 
       sampleRgbaLinearBilinear(srcData, w, h, sampleX, sampleY, linRgb);
 
