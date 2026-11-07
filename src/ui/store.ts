@@ -1,8 +1,9 @@
 import { signal, computed } from '@preact/signals';
 import { DEFAULT_SETTINGS, PhotoEditor } from '../core/editor';
 import { HistoryManager } from '../core/history';
-import { SliderSettings, PresetKey } from '../core/types';
-import { ToolTab } from './types';
+import { DodgeBurnToolMode, PaperType, SliderSettings, PresetKey } from '../core/types';
+import { PAPER_PROFILES } from '../core/paper/constants';
+import { PrintSubTab, ToolTab, WorkspaceMode } from './types';
 import { PRESETS } from '../core/presets';
 import { RawMetadata } from '../core/raw/libraw-types';
 import { SmartRecipeSuggestion } from '../core/smart-recipe';
@@ -12,7 +13,9 @@ let editorInstance: PhotoEditor | null = null;
 let historyInstance: HistoryManager | null = null;
 
 // Reactive signals
+export const workspaceMode = signal<WorkspaceMode>('develop');
 export const activeTab = signal<ToolTab>('light');
+export const activePrintSubTab = signal<PrintSubTab>('enlarger');
 export const sliderSettings = signal<SliderSettings>({ ...DEFAULT_SETTINGS });
 export const rotation = signal<number>(0);
 export const imageLoaded = signal<boolean>(false);
@@ -25,6 +28,12 @@ export const canRedo = signal<boolean>(false);
 export const isComparing = signal<boolean>(false);
 export const isZoomed = signal<boolean>(false);
 export const printDimensionsText = signal<string>('Fotoğraf bekleniyor...');
+
+// Faz 1: Dodge & Burn Brush Signals
+export const dodgeBurnTool = signal<DodgeBurnToolMode>('off');
+export const dodgeBurnRadius = signal<number>(12); // Kısa kenarın %'si (3 .. 35)
+export const dodgeBurnStrength = signal<number>(12); // Darbe gücü %'si (2 .. 40)
+export const hasDodgeBurnEdits = signal<boolean>(false);
 
 // AI Depth Signals
 export const depthEnabled = signal<boolean>(false);
@@ -47,6 +56,10 @@ export const activePresetDescription = computed(() => {
   return p.description || p.name;
 });
 
+export function isMonoNegativePreset(preset: PresetKey): boolean {
+  return preset === 'hp5' || preset === 'sb';
+}
+
 export function registerEditor(editor: PhotoEditor, history: HistoryManager): void {
   editorInstance = editor;
   historyInstance = history;
@@ -60,6 +73,11 @@ export function syncFromEditor(): void {
   imageLoaded.value = editorInstance.hasImage;
   isRaw.value = editorInstance.isRawImage;
   rawMetadata.value = editorInstance.currentRawMetadata;
+  hasDodgeBurnEdits.value = editorInstance.hasDodgeBurnChanges;
+
+  if (!editorInstance.settings.printEnabled && dodgeBurnTool.value !== 'off') {
+    dodgeBurnTool.value = 'off';
+  }
 
   const dims = editorInstance.originalDimensions;
   if (dims) {
@@ -108,6 +126,159 @@ export function commitSettingToHistory(): void {
   canRedo.value = historyInstance.canRedo();
 }
 
+export function setWorkspaceMode(mode: WorkspaceMode): { switchedToMonoPreset: boolean } {
+  workspaceMode.value = mode;
+
+  if (mode === 'develop') {
+    dodgeBurnTool.value = 'off';
+    return { switchedToMonoPreset: false };
+  }
+
+  if (!editorInstance) {
+    return { switchedToMonoPreset: false };
+  }
+
+  let changed = false;
+  let switchedToMonoPreset = false;
+
+  if (!isMonoNegativePreset(editorInstance.settings.preset)) {
+    const hp5 = PRESETS.hp5;
+    editorInstance.settings = {
+      ...editorInstance.settings,
+      preset: 'hp5',
+      shoulder: hp5.defaultShoulder ?? editorInstance.settings.shoulder,
+      halation: hp5.defaultHalation ?? editorInstance.settings.halation
+    };
+    switchedToMonoPreset = true;
+    changed = true;
+  }
+
+  if (!editorInstance.settings.printEnabled) {
+    editorInstance.settings = {
+      ...editorInstance.settings,
+      printEnabled: true
+    };
+    changed = true;
+  }
+
+  if (editorInstance.settings.aiShowDepthMap) {
+    editorInstance.settings.aiShowDepthMap = false;
+    depthShowMap.value = false;
+    changed = true;
+  }
+
+  if (changed) {
+    editorInstance.scheduleRender();
+    syncFromEditor();
+    commitSettingToHistory();
+  }
+
+  return { switchedToMonoPreset };
+}
+
+export function setPrintLayerEnabled(enabled: boolean): { switchedToMonoPreset: boolean } {
+  if (!editorInstance) return { switchedToMonoPreset: false };
+
+  let switchedToMonoPreset = false;
+  const nextSettings: SliderSettings = {
+    ...editorInstance.settings,
+    printEnabled: enabled
+  };
+
+  if (enabled && !isMonoNegativePreset(nextSettings.preset)) {
+    const hp5 = PRESETS.hp5;
+    nextSettings.preset = 'hp5';
+    nextSettings.shoulder = hp5.defaultShoulder ?? nextSettings.shoulder;
+    nextSettings.halation = hp5.defaultHalation ?? nextSettings.halation;
+    switchedToMonoPreset = true;
+  }
+
+  if (!enabled) {
+    dodgeBurnTool.value = 'off';
+  }
+
+  editorInstance.settings = nextSettings;
+  editorInstance.scheduleRender();
+  syncFromEditor();
+  commitSettingToHistory();
+
+  return { switchedToMonoPreset };
+}
+
+export function setPaperType(paperType: PaperType): void {
+  if (!editorInstance) return;
+  const profile = PAPER_PROFILES[paperType] || PAPER_PROFILES['rc-glossy'];
+  editorInstance.settings = {
+    ...editorInstance.settings,
+    printPaperType: paperType,
+    printPaperTone: profile.defaultPaperTone
+  };
+  editorInstance.scheduleRender();
+  syncFromEditor();
+  commitSettingToHistory();
+}
+
+function getBrushParams() {
+  const radiusNorm = Math.max(0.02, Math.min(0.35, dodgeBurnRadius.value / 100));
+  const strengthStops = Math.max(0.01, Math.min(0.35, (dodgeBurnStrength.value / 100) * 0.6));
+  return { radiusNorm, strengthStops };
+}
+
+export function paintDodgeBurnStrokeStart(
+  normX: number,
+  normY: number,
+  pressure: number
+): void {
+  if (!editorInstance || !editorInstance.hasImage || !editorInstance.settings.printEnabled) return;
+  const mode = dodgeBurnTool.value;
+  if (mode === 'off') return;
+
+  const { radiusNorm, strengthStops } = getBrushParams();
+  editorInstance.paintDodgeBurnDab({
+    normX,
+    normY,
+    radiusNorm,
+    mode,
+    strengthStops,
+    pressure
+  });
+  hasDodgeBurnEdits.value = editorInstance.hasDodgeBurnChanges;
+}
+
+export function paintDodgeBurnStrokeMove(
+  fromNormX: number,
+  fromNormY: number,
+  toNormX: number,
+  toNormY: number,
+  pressure: number
+): void {
+  if (!editorInstance || !editorInstance.hasImage || !editorInstance.settings.printEnabled) return;
+  const mode = dodgeBurnTool.value;
+  if (mode === 'off') return;
+
+  const { radiusNorm, strengthStops } = getBrushParams();
+  editorInstance.paintDodgeBurnSegment(fromNormX, fromNormY, toNormX, toNormY, {
+    radiusNorm,
+    mode,
+    strengthStops,
+    pressure
+  });
+  hasDodgeBurnEdits.value = editorInstance.hasDodgeBurnChanges;
+}
+
+export function finishDodgeBurnStroke(): void {
+  if (!editorInstance) return;
+  hasDodgeBurnEdits.value = editorInstance.hasDodgeBurnChanges;
+  commitSettingToHistory();
+}
+
+export function clearDodgeBurn(): void {
+  if (!editorInstance) return;
+  editorInstance.clearDodgeBurnMap();
+  hasDodgeBurnEdits.value = false;
+  commitSettingToHistory();
+}
+
 export function setPreset(key: PresetKey): void {
   if (!editorInstance) return;
   const p = PRESETS[key] || PRESETS.none;
@@ -142,6 +313,8 @@ export function redo(): void {
 
 export function resetSettings(): void {
   if (!editorInstance || !historyInstance) return;
+  dodgeBurnTool.value = 'off';
+  workspaceMode.value = 'develop';
   editorInstance.resetSettings();
   syncFromEditor();
   commitSettingToHistory();
