@@ -1,4 +1,5 @@
 import { EditorSnapshot, SliderSettings } from './types';
+import { areDodgeBurnMapsEqual, cloneDodgeBurnMap } from './paper/dodge-burn';
 
 /**
  * İki seviyeli sığ klonlama fonksiyonu.
@@ -7,16 +8,21 @@ import { EditorSnapshot, SliderSettings } from './types';
 export function cloneSnapshot(snapshot: EditorSnapshot): EditorSnapshot {
   return {
     settings: { ...snapshot.settings },
-    rotation: snapshot.rotation
+    rotation: snapshot.rotation,
+    dodgeBurnMap: cloneDodgeBurnMap(snapshot.dodgeBurnMap)
   };
 }
 
 function areSnapshotsEqual(a: EditorSnapshot | null, b: EditorSnapshot): boolean {
   if (!a) return false;
   if (a.rotation !== b.rotation) return false;
+  if (!areDodgeBurnMapsEqual(a.dodgeBurnMap, b.dodgeBurnMap)) return false;
   const aSettings = a.settings;
   const bSettings = b.settings;
-  const keys = Object.keys(aSettings) as (keyof SliderSettings)[];
+  const keys = new Set([
+    ...Object.keys(aSettings),
+    ...Object.keys(bSettings)
+  ]) as Set<keyof SliderSettings>;
   for (const key of keys) {
     if (aSettings[key] !== bSettings[key]) return false;
   }
