@@ -802,6 +802,10 @@ export class ColorLutWebGPUEngine {
       ctx.restore();
 
       imageTexture.destroy();
+      if (w * h > 4_194_304) {
+        this.gpuCanvas.width = 1;
+        this.gpuCanvas.height = 1;
+      }
       return true;
     } catch (err) {
       console.warn('3D LUT WebGPU render hatası, CPU tetrahedral yedek devreye giriyor:', err);

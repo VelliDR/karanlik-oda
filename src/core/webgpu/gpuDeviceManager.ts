@@ -18,6 +18,74 @@ export function isWebGPUSupported(): boolean {
   );
 }
 
+async function tryInitDevice(
+  options?: GPURequestAdapterOptions,
+  requireSwapchain = true
+): Promise<GPUDevice | null> {
+  try {
+    const adapter = await navigator.gpu.requestAdapter(options);
+    if (!adapter) return null;
+
+    const maxTex2D = adapter.limits.maxTextureDimension2D || 8192;
+    const device = await adapter.requestDevice({
+      requiredLimits: {
+        maxTextureDimension2D: maxTex2D
+      }
+    });
+
+    let lostDuringProbe = false;
+    device.lost.then(() => {
+      lostDuringProbe = true;
+    });
+
+    const probeEncoder = device.createCommandEncoder({ label: 'WebGPU Liveness Probe' });
+
+    if (requireSwapchain) {
+      const probeCanvas = new OffscreenCanvas(1, 1);
+      const probeCtx = probeCanvas.getContext('webgpu') as GPUCanvasContext | null;
+      if (!probeCtx) {
+        return null;
+      }
+      const format = navigator.gpu.getPreferredCanvasFormat();
+      probeCtx.configure({
+        device,
+        format,
+        alphaMode: 'opaque'
+      });
+      const pass = probeEncoder.beginRenderPass({
+        colorAttachments: [
+          {
+            view: probeCtx.getCurrentTexture().createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store'
+          }
+        ]
+      });
+      pass.end();
+      probeCtx.unconfigure();
+    }
+
+    device.queue.submit([probeEncoder.finish()]);
+
+    const alive = await Promise.race([
+      device.queue
+        .onSubmittedWorkDone()
+        .then(() => true)
+        .catch(() => false),
+      device.lost.then(() => false)
+    ]);
+
+    if (!alive || lostDuringProbe) {
+      return null;
+    }
+
+    return device;
+  } catch {
+    return null;
+  }
+}
+
 export async function getSharedGPUDevice(): Promise<GPUDevice | null> {
   if (sharedDevice) {
     return sharedDevice;
@@ -31,21 +99,25 @@ export async function getSharedGPUDevice(): Promise<GPUDevice | null> {
 
   sharedDevicePromise = (async () => {
     try {
-      const adapter = await navigator.gpu.requestAdapter({
-        powerPreference: 'high-performance'
-      });
-      if (!adapter) return null;
-
-      const maxTex2D = adapter.limits.maxTextureDimension2D || 8192;
-      const device = await adapter.requestDevice({
-        requiredLimits: {
-          maxTextureDimension2D: maxTex2D
-        }
-      });
+      let device = await tryInitDevice({ powerPreference: 'high-performance' }, true);
+      if (!device) {
+        device = await tryInitDevice(undefined, true);
+      }
+      if (!device) {
+        device = await tryInitDevice(
+          { fallbackAdapter: true } as GPURequestAdapterOptions,
+          true
+        );
+      }
+      if (!device) {
+        return null;
+      }
 
       device.lost.then((info) => {
         console.warn('WebGPU Paylaşımlı Cihaz kaybedildi:', info.message);
-        sharedDevice = null;
+        if (sharedDevice === device) {
+          sharedDevice = null;
+        }
       });
 
       sharedDevice = device;
@@ -59,6 +131,24 @@ export async function getSharedGPUDevice(): Promise<GPUDevice | null> {
   })();
 
   return sharedDevicePromise;
+}
+
+/**
+ * Pencere yüzeyi (swapchain) olmayan headless ortamlarda doğrudan GPUTexture + GPUBuffer
+ * geri okuma (readback) ile WGSL shader çalıştırmak için swapchain bağımsız GPUDevice üretir.
+ */
+export async function requestOffscreenGPUDevice(): Promise<GPUDevice | null> {
+  if (!isWebGPUSupported()) {
+    return null;
+  }
+  let device = await tryInitDevice({ powerPreference: 'high-performance' }, false);
+  if (!device) {
+    device = await tryInitDevice(undefined, false);
+  }
+  if (!device) {
+    device = await tryInitDevice({ fallbackAdapter: true } as GPURequestAdapterOptions, false);
+  }
+  return device;
 }
 
 export function getSharedGPUDeviceSync(): GPUDevice | null {

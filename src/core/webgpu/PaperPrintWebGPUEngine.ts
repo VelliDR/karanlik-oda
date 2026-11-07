@@ -13,7 +13,11 @@ import {
 import { hasActiveDodgeBurnData, packDodgeBurnMapToR16Float } from '../paper/dodge-burn';
 import { computePaperBaseLinearRgb, PaperPrintRenderContext } from '../paper/paper-cpu';
 import { getOrBuildToningLUT1D } from '../paper/toning-lut';
-import { getSharedGPUDevice, isWebGPUSupported } from './gpuDeviceManager';
+import {
+  getSharedGPUDevice,
+  isWebGPUSupported,
+  requestOffscreenGPUDevice
+} from './gpuDeviceManager';
 
 const INV_LN_10 = 1.0 / LN_10;
 const NEG_INV_LOG_DENOM =
@@ -316,17 +320,29 @@ export class PaperPrintWebGPUEngine {
   private readonly toningTexture: GPUTexture;
   private cachedToningKey = '';
 
+  private sourceImageTexture: GPUTexture | null = null;
+  private cachedSourceWidth = 0;
+  private cachedSourceHeight = 0;
+
   private dodgeBurnTexture: GPUTexture | null = null;
   private cachedDbWidth = 0;
   private cachedDbHeight = 0;
   private cachedDbVersion = -1;
   private dodgeBurnHalfScratch: Uint16Array | null = null;
 
-  private gpuCanvas: OffscreenCanvas;
-  private gpuContext: GPUCanvasContext;
+  private cachedBindGroup: GPUBindGroup | null = null;
+  private cachedBgImageTex: GPUTexture | null = null;
+  private cachedBgDbTex: GPUTexture | null = null;
+
+  private gpuCanvas: OffscreenCanvas | null = null;
+  private gpuContext: GPUCanvasContext | null = null;
   private isDeviceLost = false;
 
-  private constructor(device: GPUDevice, presentationFormat: GPUTextureFormat) {
+  private constructor(
+    device: GPUDevice,
+    presentationFormat: GPUTextureFormat,
+    useSwapchain = true
+  ) {
     this.device = device;
     this.presentationFormat = presentationFormat;
 
@@ -433,17 +449,19 @@ export class PaperPrintWebGPUEngine {
       usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST
     });
 
-    this.gpuCanvas = new OffscreenCanvas(256, 256);
-    const ctx = this.gpuCanvas.getContext('webgpu') as GPUCanvasContext | null;
-    if (!ctx) {
-      throw new Error('PaperPrint WebGPU context oluşturulamadı.');
+    if (useSwapchain) {
+      this.gpuCanvas = new OffscreenCanvas(256, 256);
+      const ctx = this.gpuCanvas.getContext('webgpu') as GPUCanvasContext | null;
+      if (!ctx) {
+        throw new Error('PaperPrint WebGPU context oluşturulamadı.');
+      }
+      this.gpuContext = ctx;
+      this.gpuContext.configure({
+        device: this.device,
+        format: this.presentationFormat,
+        alphaMode: 'opaque'
+      });
     }
-    this.gpuContext = ctx;
-    this.gpuContext.configure({
-      device: this.device,
-      format: this.presentationFormat,
-      alphaMode: 'opaque'
-    });
   }
 
   public static isSupported(): boolean {
@@ -467,7 +485,7 @@ export class PaperPrintWebGPUEngine {
         if (!device) return null;
 
         const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
-        const engine = new PaperPrintWebGPUEngine(device, presentationFormat);
+        const engine = new PaperPrintWebGPUEngine(device, presentationFormat, true);
         PaperPrintWebGPUEngine.instance = engine;
         return engine;
       } catch (err) {
@@ -479,6 +497,23 @@ export class PaperPrintWebGPUEngine {
     })();
 
     return PaperPrintWebGPUEngine.initPromise;
+  }
+
+  /**
+   * Swapchain olmayan ortamlarda (ör. headless doğrulama ve arka plan testleri) aynı WGSL shader,
+   * uniform ve yarım-float dokuları doğrudan `rgba8unorm` GPUTexture üzerinde çalıştıran örnek üretir.
+   */
+  public static async createOffscreenReadbackEngine(): Promise<PaperPrintWebGPUEngine | null> {
+    if (!PaperPrintWebGPUEngine.isSupported()) {
+      return null;
+    }
+    try {
+      const device = await requestOffscreenGPUDevice();
+      if (!device) return null;
+      return new PaperPrintWebGPUEngine(device, 'rgba8unorm', false);
+    } catch {
+      return null;
+    }
   }
 
   public static getInstanceSync(): PaperPrintWebGPUEngine | null {
@@ -560,6 +595,137 @@ export class PaperPrintWebGPUEngine {
     return this.dodgeBurnTexture;
   }
 
+  private ensureSourceImageTexture(w: number, h: number): GPUTexture {
+    if (
+      !this.sourceImageTexture ||
+      this.cachedSourceWidth !== w ||
+      this.cachedSourceHeight !== h
+    ) {
+      if (this.sourceImageTexture) {
+        try {
+          this.sourceImageTexture.destroy();
+        } catch {}
+      }
+      this.sourceImageTexture = this.device.createTexture({
+        label: `PaperPrint Source Image ${w}x${h}`,
+        size: [w, h, 1],
+        format: 'rgba8unorm',
+        usage:
+          GPUTextureUsage.TEXTURE_BINDING |
+          GPUTextureUsage.COPY_DST |
+          GPUTextureUsage.RENDER_ATTACHMENT
+      });
+      this.cachedSourceWidth = w;
+      this.cachedSourceHeight = h;
+      this.cachedBindGroup = null;
+    }
+    return this.sourceImageTexture;
+  }
+
+  private prepareUniformsAndBindGroup(
+    w: number,
+    h: number,
+    sourceTex: GPUTexture,
+    settings: SliderSettings,
+    context?: PaperPrintRenderContext
+  ): GPUBindGroup {
+    const paperType: PaperType =
+      settings.printPaperType && PAPER_PROFILES[settings.printPaperType]
+        ? settings.printPaperType
+        : 'rc-glossy';
+    const profile = PAPER_PROFILES[paperType];
+
+    const exposureStops = Math.max(
+      ENLARGER_CONSTANTS.minExposureStops,
+      Math.min(
+        ENLARGER_CONSTANTS.maxExposureStops,
+        settings.printExposure ?? ENLARGER_CONSTANTS.defaultExposureStops
+      )
+    );
+    const grade = Math.max(
+      MULTIGRADE_EMULSION_CONSTANTS.minGrade,
+      Math.min(
+        MULTIGRADE_EMULSION_CONSTANTS.maxGrade,
+        settings.printGrade ?? MULTIGRADE_EMULSION_CONSTANTS.defaultGrade
+      )
+    );
+    const hardWeight = computeHardLayerWeight(grade);
+    const splitGrade = Boolean(settings.printSplitGrade);
+    const splitRatio = Math.max(0.0, Math.min(1.0, settings.printSplitRatio ?? 0.5));
+    const paperTone = Math.max(0.0, Math.min(1.0, settings.printPaperTone ?? 0.0));
+    const selenium = Math.max(0.0, Math.min(1.0, settings.printSelenium ?? 0.0));
+    const sepia = Math.max(0.0, Math.min(1.0, settings.printSepia ?? 0.0));
+
+    const [baseR, baseG, baseB] = computePaperBaseLinearRgb(paperType, paperTone);
+    const { texture: toningTex, isNeutral: isNeutralToning } = this.ensureToningTexture(
+      selenium,
+      sepia,
+      paperType
+    );
+
+    const dodgeBurnMap = context?.dodgeBurnMap ?? null;
+    const useDodgeBurn = hasActiveDodgeBurnData(dodgeBurnMap);
+    const dbTexture = this.ensureDodgeBurnTexture(dodgeBurnMap, useDodgeBurn);
+
+    const fullW =
+      context?.fullDimensions?.width && context.fullDimensions.width > 0
+        ? context.fullDimensions.width
+        : w;
+    const fullH =
+      context?.fullDimensions?.height && context.fullDimensions.height > 0
+        ? context.fullDimensions.height
+        : h;
+    const fullWidthMm = fullW * MM_PER_PIXEL_AT_300DPI;
+    const fullHeightMm = fullH * MM_PER_PIXEL_AT_300DPI;
+
+    const u = this.uniformArray;
+    u[0] = w;
+    u[1] = h;
+    u[2] = fullWidthMm;
+    u[3] = fullHeightMm;
+    u[4] = exposureStops;
+    u[5] = hardWeight;
+    u[6] = splitGrade ? 1.0 : 0.0;
+    u[7] = splitRatio;
+    u[8] = profile.dMin;
+    u[9] = profile.dMax;
+    u[10] = baseR;
+    u[11] = baseG;
+    u[12] = baseB;
+    u[13] = profile.texture.amplitude;
+    u[14] = profile.texture.lowFreqWavelengthMm;
+    u[15] = profile.texture.highFreqWavelengthMm;
+    u[16] = profile.texture.lowFreqWeight;
+    u[17] = useDodgeBurn ? 1.0 : 0.0;
+    u[18] = isNeutralToning ? 1.0 : 0.0;
+    u[19] = 0.0;
+
+    // Tek bir toplu uniform yazımı (slider sürüklemede sıfır ek tampon/doku tahsisi)
+    this.device.queue.writeBuffer(this.uniformBuffer, 0, u);
+
+    if (
+      !this.cachedBindGroup ||
+      this.cachedBgImageTex !== sourceTex ||
+      this.cachedBgDbTex !== dbTexture
+    ) {
+      this.cachedBindGroup = this.device.createBindGroup({
+        label: 'PaperPrint Bind Group',
+        layout: this.bindGroupLayout,
+        entries: [
+          { binding: 0, resource: { buffer: this.uniformBuffer } },
+          { binding: 1, resource: sourceTex.createView() },
+          { binding: 2, resource: dbTexture.createView() },
+          { binding: 3, resource: toningTex.createView() },
+          { binding: 4, resource: this.linearSampler }
+        ]
+      });
+      this.cachedBgImageTex = sourceTex;
+      this.cachedBgDbTex = dbTexture;
+    }
+
+    return this.cachedBindGroup;
+  }
+
   public renderToTarget(
     target: RenderTarget,
     settings: SliderSettings,
@@ -568,7 +734,9 @@ export class PaperPrintWebGPUEngine {
     if (!settings.printEnabled) return true;
 
     const { width: w, height: h, ctx } = target;
-    if (w <= 0 || h <= 0 || this.isDeviceLost) return false;
+    if (w <= 0 || h <= 0 || this.isDeviceLost || !this.gpuCanvas || !this.gpuContext) {
+      return false;
+    }
 
     const maxTexDim = this.device.limits.maxTextureDimension2D || 8192;
     if (w > maxTexDim || h > maxTexDim) {
@@ -586,107 +754,14 @@ export class PaperPrintWebGPUEngine {
         });
       }
 
-      const paperType: PaperType =
-        settings.printPaperType && PAPER_PROFILES[settings.printPaperType]
-          ? settings.printPaperType
-          : 'rc-glossy';
-      const profile = PAPER_PROFILES[paperType];
-
-      const exposureStops = Math.max(
-        ENLARGER_CONSTANTS.minExposureStops,
-        Math.min(
-          ENLARGER_CONSTANTS.maxExposureStops,
-          settings.printExposure ?? ENLARGER_CONSTANTS.defaultExposureStops
-        )
-      );
-      const grade = Math.max(
-        MULTIGRADE_EMULSION_CONSTANTS.minGrade,
-        Math.min(
-          MULTIGRADE_EMULSION_CONSTANTS.maxGrade,
-          settings.printGrade ?? MULTIGRADE_EMULSION_CONSTANTS.defaultGrade
-        )
-      );
-      const hardWeight = computeHardLayerWeight(grade);
-      const splitGrade = Boolean(settings.printSplitGrade);
-      const splitRatio = Math.max(0.0, Math.min(1.0, settings.printSplitRatio ?? 0.5));
-      const paperTone = Math.max(0.0, Math.min(1.0, settings.printPaperTone ?? 0.0));
-      const selenium = Math.max(0.0, Math.min(1.0, settings.printSelenium ?? 0.0));
-      const sepia = Math.max(0.0, Math.min(1.0, settings.printSepia ?? 0.0));
-
-      const [baseR, baseG, baseB] = computePaperBaseLinearRgb(paperType, paperTone);
-      const { texture: toningTex, isNeutral: isNeutralToning } = this.ensureToningTexture(
-        selenium,
-        sepia,
-        paperType
-      );
-
-      const dodgeBurnMap = context?.dodgeBurnMap ?? null;
-      const useDodgeBurn = hasActiveDodgeBurnData(dodgeBurnMap);
-      const dbTexture = this.ensureDodgeBurnTexture(dodgeBurnMap, useDodgeBurn);
-
-      const fullW =
-        context?.fullDimensions?.width && context.fullDimensions.width > 0
-          ? context.fullDimensions.width
-          : w;
-      const fullH =
-        context?.fullDimensions?.height && context.fullDimensions.height > 0
-          ? context.fullDimensions.height
-          : h;
-      const fullWidthMm = fullW * MM_PER_PIXEL_AT_300DPI;
-      const fullHeightMm = fullH * MM_PER_PIXEL_AT_300DPI;
-
-      const imageTexture = this.device.createTexture({
-        label: 'PaperPrint Source Image Texture',
-        size: [w, h, 1],
-        format: 'rgba8unorm',
-        usage:
-          GPUTextureUsage.TEXTURE_BINDING |
-          GPUTextureUsage.COPY_DST |
-          GPUTextureUsage.RENDER_ATTACHMENT
-      });
-
+      const sourceTex = this.ensureSourceImageTexture(w, h);
       this.device.queue.copyExternalImageToTexture(
         { source: target.canvas as GPUCopyExternalImageSource },
-        { texture: imageTexture },
+        { texture: sourceTex },
         [w, h]
       );
 
-      const u = this.uniformArray;
-      u[0] = w;
-      u[1] = h;
-      u[2] = fullWidthMm;
-      u[3] = fullHeightMm;
-      u[4] = exposureStops;
-      u[5] = hardWeight;
-      u[6] = splitGrade ? 1.0 : 0.0;
-      u[7] = splitRatio;
-      u[8] = profile.dMin;
-      u[9] = profile.dMax;
-      u[10] = baseR;
-      u[11] = baseG;
-      u[12] = baseB;
-      u[13] = profile.texture.amplitude;
-      u[14] = profile.texture.lowFreqWavelengthMm;
-      u[15] = profile.texture.highFreqWavelengthMm;
-      u[16] = profile.texture.lowFreqWeight;
-      u[17] = useDodgeBurn ? 1.0 : 0.0;
-      u[18] = isNeutralToning ? 1.0 : 0.0;
-      u[19] = 0.0;
-
-      // Tek bir toplu uniform yazımı (slider sürüklemede sıfır ek tampon tahsisi)
-      this.device.queue.writeBuffer(this.uniformBuffer, 0, u);
-
-      const bindGroup = this.device.createBindGroup({
-        label: 'PaperPrint Bind Group',
-        layout: this.bindGroupLayout,
-        entries: [
-          { binding: 0, resource: { buffer: this.uniformBuffer } },
-          { binding: 1, resource: imageTexture.createView() },
-          { binding: 2, resource: dbTexture.createView() },
-          { binding: 3, resource: toningTex.createView() },
-          { binding: 4, resource: this.linearSampler }
-        ]
-      });
+      const bindGroup = this.prepareUniformsAndBindGroup(w, h, sourceTex, settings, context);
 
       const commandEncoder = this.device.createCommandEncoder({
         label: 'PaperPrint Command Encoder'
@@ -711,16 +786,169 @@ export class PaperPrintWebGPUEngine {
 
       this.device.queue.submit([commandEncoder.finish()]);
 
+      if (this.isDeviceLost) {
+        return false;
+      }
+
       ctx.save();
       ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.gpuCanvas as CanvasImageSource, 0, 0);
       ctx.restore();
 
-      imageTexture.destroy();
+      // 24MP gibi yüksek çözünürlüklü export geçişlerinden sonra geçici VRAM tamponlarını anında boşalt
+      if (w * h > 4_194_304) {
+        this.releaseScratchResources();
+      }
+
       return true;
     } catch (err) {
       console.warn('Kağıda Baskı WebGPU render hatası, CPU yedeği devreye giriyor:', err);
       return false;
+    }
+  }
+
+  /**
+   * Swapchain olmayan ortamlarda aynı WGSL hattını GPUTexture + GPUBuffer üzerinden çalıştırıp
+   * pikselleri 2D tuvale yazar.
+   */
+  public async renderToTargetReadback(
+    target: RenderTarget,
+    settings: SliderSettings,
+    context?: PaperPrintRenderContext
+  ): Promise<boolean> {
+    if (!settings.printEnabled) return true;
+
+    const { width: w, height: h, ctx } = target;
+    if (w <= 0 || h <= 0 || this.isDeviceLost) return false;
+
+    const maxTexDim = this.device.limits.maxTextureDimension2D || 8192;
+    if (w > maxTexDim || h > maxTexDim) {
+      return false;
+    }
+
+    let outTexture: GPUTexture | null = null;
+    let readBuffer: GPUBuffer | null = null;
+
+    try {
+      const srcImg = ctx.getImageData(0, 0, w, h);
+      const sourceTex = this.ensureSourceImageTexture(w, h);
+      this.device.queue.writeTexture(
+        { texture: sourceTex },
+        srcImg.data.buffer,
+        {
+          offset: srcImg.data.byteOffset,
+          bytesPerRow: w * 4,
+          rowsPerImage: h
+        },
+        [w, h, 1]
+      );
+
+      const bindGroup = this.prepareUniformsAndBindGroup(w, h, sourceTex, settings, context);
+
+      outTexture = this.device.createTexture({
+        label: `PaperPrint Readback Out ${w}x${h}`,
+        size: [w, h, 1],
+        format: this.presentationFormat,
+        usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
+      });
+
+      const bytesPerRow = Math.ceil((w * 4) / 256) * 256;
+      readBuffer = this.device.createBuffer({
+        label: 'PaperPrint Readback Buffer',
+        size: bytesPerRow * h,
+        usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
+      });
+
+      const commandEncoder = this.device.createCommandEncoder({
+        label: 'PaperPrint Readback Encoder'
+      });
+
+      const passEncoder = commandEncoder.beginRenderPass({
+        label: 'PaperPrint Readback Pass',
+        colorAttachments: [
+          {
+            view: outTexture.createView(),
+            clearValue: { r: 0, g: 0, b: 0, a: 1 },
+            loadOp: 'clear',
+            storeOp: 'store'
+          }
+        ]
+      });
+
+      passEncoder.setPipeline(this.pipeline);
+      passEncoder.setBindGroup(0, bindGroup);
+      passEncoder.draw(3);
+      passEncoder.end();
+
+      commandEncoder.copyTextureToBuffer(
+        { texture: outTexture },
+        { buffer: readBuffer, bytesPerRow, rowsPerImage: h },
+        [w, h, 1]
+      );
+
+      this.device.queue.submit([commandEncoder.finish()]);
+      await readBuffer.mapAsync(GPUMapMode.READ);
+
+      const mapped = new Uint8Array(readBuffer.getMappedRange());
+      const outData = new Uint8ClampedArray(w * h * 4);
+      for (let y = 0; y < h; y++) {
+        const srcRow = y * bytesPerRow;
+        const dstRow = y * w * 4;
+        outData.set(mapped.subarray(srcRow, srcRow + w * 4), dstRow);
+      }
+      readBuffer.unmap();
+
+      ctx.putImageData(new ImageData(outData, w, h), 0, 0);
+
+      if (w * h > 4_194_304) {
+        this.releaseScratchResources();
+      }
+      return true;
+    } catch (err) {
+      console.warn('Kağıda Baskı WebGPU readback render hatası:', err);
+      return false;
+    } finally {
+      if (outTexture) {
+        try {
+          outTexture.destroy();
+        } catch {}
+      }
+      if (readBuffer) {
+        try {
+          readBuffer.destroy();
+        } catch {}
+      }
+    }
+  }
+
+  public releaseScratchResources(): void {
+    if (this.sourceImageTexture) {
+      try {
+        this.sourceImageTexture.destroy();
+      } catch {}
+      this.sourceImageTexture = null;
+    }
+    this.cachedSourceWidth = 0;
+    this.cachedSourceHeight = 0;
+
+    if (this.dodgeBurnTexture) {
+      try {
+        this.dodgeBurnTexture.destroy();
+      } catch {}
+      this.dodgeBurnTexture = null;
+    }
+    this.cachedDbWidth = 0;
+    this.cachedDbHeight = 0;
+    this.cachedDbVersion = -1;
+    this.dodgeBurnHalfScratch = null;
+
+    this.cachedBindGroup = null;
+    this.cachedBgImageTex = null;
+    this.cachedBgDbTex = null;
+
+    if (this.gpuCanvas && (this.gpuCanvas.width > 1 || this.gpuCanvas.height > 1)) {
+      this.gpuCanvas.width = 1;
+      this.gpuCanvas.height = 1;
     }
   }
 }

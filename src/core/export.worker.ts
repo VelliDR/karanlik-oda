@@ -51,6 +51,8 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     dodgeBurnMap
   } = e.data;
 
+  let offscreenCanvas: OffscreenCanvas | null = null;
+
   try {
     self.postMessage({
       type: 'progress',
@@ -74,7 +76,7 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     const targetWidth = isTransposed ? imageBitmap.height : imageBitmap.width;
     const targetHeight = isTransposed ? imageBitmap.width : imageBitmap.height;
 
-    const offscreenCanvas = new OffscreenCanvas(targetWidth, targetHeight);
+    offscreenCanvas = new OffscreenCanvas(targetWidth, targetHeight);
     const ctx = offscreenCanvas.getContext('2d');
 
     if (!ctx) {
@@ -120,6 +122,10 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
 
     let blob = await offscreenCanvas.convertToBlob({ type: format, quality });
 
+    // 24MP OffscreenCanvas arka plan tamponunu metaveri enjeksiyonu öncesinde hemen serbest bırak
+    offscreenCanvas.width = 0;
+    offscreenCanvas.height = 0;
+
     if (format === 'image/jpeg') {
       blob = await inject300DpiAndExifToJpeg(blob, originalMetadataSegments, dpi);
     } else if (format === 'image/png') {
@@ -151,6 +157,12 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
       message: err?.message || 'Arka plan render işlemi başarısız oldu.'
     } as WorkerMessageToMain);
   } finally {
+    if (offscreenCanvas) {
+      offscreenCanvas.width = 0;
+      offscreenCanvas.height = 0;
+      offscreenCanvas = null;
+    }
+    PaperPrintWebGPUEngine.getInstanceSync()?.releaseScratchResources();
     imageBitmap.close();
     if (depthBitmap) {
       try {

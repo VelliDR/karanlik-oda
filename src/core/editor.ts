@@ -13,7 +13,11 @@ import {
   createCompatibleCanvas,
   createNoisePattern
 } from './optics';
-import { executeRenderPipeline, drawImageWithRotation } from './pipeline/render-pipeline';
+import {
+  clearPreviewNegativeCache,
+  drawImageWithRotation,
+  executeRenderPipeline
+} from './pipeline/render-pipeline';
 import {
   getCustomCubeLUT,
   parseCubeLUT,
@@ -1287,6 +1291,8 @@ export class PhotoEditor {
     this.cleanupUrls();
     this.cleanupDepth();
     this.cleanupSkinMask();
+    clearPreviewNegativeCache();
+    PaperPrintWebGPUEngine.getInstanceSync()?.releaseScratchResources();
     this.dodgeBurnMap = null;
     if (this.depthWorker) {
       this.depthWorker.terminate();

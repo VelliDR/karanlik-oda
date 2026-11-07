@@ -137,6 +137,68 @@ export function applySkinToneProtection(
   }
 }
 
+interface PreviewNegativeCacheState {
+  canvas: AnyCanvas;
+  ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+  width: number;
+  height: number;
+  key: string;
+  sourceImg: HTMLImageElement | ImageBitmap;
+  noisePattern: CanvasPattern | null;
+  depthCanvas: AnyCanvas | null;
+  depthBitmap: ImageBitmap | null;
+  rawDepth: Float32Array | null;
+  skinMask: AnyCanvas | null;
+  customLut: CubeLUT3D | null;
+  gpuActive: boolean;
+}
+
+let previewNegativeCache: PreviewNegativeCacheState | null = null;
+
+function buildNegativeStageKey(
+  w: number,
+  h: number,
+  rotation: RotationDegree,
+  s: SliderSettings
+): string {
+  return [
+    w,
+    h,
+    rotation,
+    s.preset,
+    s.exposure,
+    s.contrast,
+    s.shoulder,
+    s.saturation,
+    s.warmth,
+    s.highlights,
+    s.shadows,
+    s.whites,
+    s.blacks,
+    s.tint,
+    s.vibrance,
+    s.texture,
+    s.clarity,
+    s.dehaze,
+    s.halation,
+    s.grain,
+    s.lightLeak,
+    s.bleachBypass,
+    s.skinProtection,
+    s.swirl,
+    s.soapBubble ?? 0,
+    s.loca ?? 0,
+    s.apertureBlades ?? 0,
+    s.bladeCurvature ?? 85,
+    s.chromatic,
+    s.proMist,
+    s.vignette,
+    s.aiDepthEnabled ? 1 : 0,
+    s.aiDepthAperture,
+    s.aiFocalDepth
+  ].join('|');
+}
+
 /**
  * Karanlık Oda Tekil İşleme Hattı (Unified Render Pipeline)
  *
@@ -146,7 +208,8 @@ export function applySkinToneProtection(
  * 3. Kimyasal Banyo & Koruma Kalkanları (Bleach Bypass, Akıllı Ten Kalkanı)
  * 4. Sonlandırıcı Vinyet & Optik Işık Düşümü (Pozlama/gölge ayarları vinyeti bozmaz)
  * 5. CCD Sensör Kusurları veya 35mm Nutting-Weibull Film Greni (Gren vinyetin üzerine doğal oturur)
- * 6. Film Çerçevesi & 90'lar Quartz Date LED Tarih Damgası
+ * 6. Faz 1 Kağıda Baskı (Multigrade / Split-Grade, Dodge/Burn, Selenyum/Sepya Toning, 300 DPI Kağıt Dokusu)
+ * 7. Film Çerçevesi & 90'lar Quartz Date LED Tarih Damgası
  */
 export function executeRenderPipeline(options: PipelineRenderOptions): void {
   const {
@@ -170,125 +233,177 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
 
   const preset = PRESETS[settings.preset] || PRESETS.none;
   const isCcd = settings.preset === 'ccd' || settings.preset === 'ccd_y2k';
-
-  // 1. Ham Görsel Çizimi
-  ctx.save();
-  ctx.filter = 'none';
-  drawImageWithRotation(target, sourceImg, rotation);
-  ctx.restore();
-
-  // 2. MERCEK OPTİĞİ
-  let activeDepthCanvas: AnyCanvas | null = options.depthCanvas || null;
-  let tempDepthCanvasCreated = false;
-
-  if (!activeDepthCanvas) {
-    const maxDepthDim = 1536;
-    const depthW = Math.min(w, maxDepthDim);
-    const depthH = Math.max(1, Math.round((h * depthW) / w));
-
-    if (options.depthBitmap) {
-      activeDepthCanvas = new OffscreenCanvas(depthW, depthH);
-      tempDepthCanvasCreated = true;
-      const dCtx = activeDepthCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
-      if (dCtx) {
-        dCtx.imageSmoothingEnabled = true;
-        dCtx.imageSmoothingQuality = 'high';
-        dCtx.drawImage(options.depthBitmap, 0, 0, depthW, depthH);
-      }
-    } else if (options.rawDepth && options.depthRoi) {
-      activeDepthCanvas = projectDepthMapFromRaw(options.rawDepth, options.depthRoi, depthW, depthH);
-      tempDepthCanvasCreated = true;
-    }
-  }
-
-  // 🤖 3D Fiziksel Alan Derinliği & Helios 44M Swirl Optiği
-  if (settings.aiDepthEnabled && activeDepthCanvas && settings.swirl === 0) {
-    applyDepthOfField(
-      target,
-      activeDepthCanvas,
-      settings.aiFocalDepth,
-      settings.aiDepthAperture
-    );
-  } else if (settings.swirl > 0) {
-    applySwirlyBokeh(
-      target,
-      settings.swirl,
-      activeDepthCanvas,
-      settings.aiFocalDepth,
-      settings.aiDepthAperture,
-      settings.soapBubble ?? 0,
-      settings.loca ?? 0,
-      settings.apertureBlades ?? 0,
-      settings.bladeCurvature ?? 85,
-      options.skinMask
-    );
-  }
-
-  if (tempDepthCanvasCreated && activeDepthCanvas) {
-    activeDepthCanvas.width = 0;
-    activeDepthCanvas.height = 0;
-    activeDepthCanvas = null;
-  }
-
-  // Radyal Kromatik Sapma
-  if (settings.chromatic > 0) {
-    applyChromaticAberration(target, settings.chromatic);
-  }
-
-  // Black Pro-Mist Sisli Parlama
-  if (settings.proMist > 0) {
-    applyBlackProMist(target, settings.proMist);
-  }
-
-  // 3. FİLM EMÜLSİYONU: 650nm Spektral Halasyon + H&D Sensitometri + 3D LUT Tetrahedral Eşleme
   const colorGpuEngine = ColorLutWebGPUEngine.getInstanceSync();
-  let gpuColorApplied = false;
+  const canUsePreviewNegCache = Boolean(settings.printEnabled) && w > 0 && h > 0 && w * h <= 4_194_304;
+  const negKey = canUsePreviewNegCache ? buildNegativeStageKey(w, h, rotation, settings) : '';
 
-  if (colorGpuEngine) {
-    gpuColorApplied = colorGpuEngine.renderToTarget(target, settings, customLut);
-  }
+  const isNegCacheHit =
+    canUsePreviewNegCache &&
+    previewNegativeCache !== null &&
+    previewNegativeCache.width === w &&
+    previewNegativeCache.height === h &&
+    previewNegativeCache.key === negKey &&
+    previewNegativeCache.sourceImg === sourceImg &&
+    previewNegativeCache.noisePattern === noisePattern &&
+    previewNegativeCache.depthCanvas === (options.depthCanvas ?? null) &&
+    previewNegativeCache.depthBitmap === (options.depthBitmap ?? null) &&
+    previewNegativeCache.rawDepth === (options.rawDepth ?? null) &&
+    previewNegativeCache.skinMask === skinMask &&
+    previewNegativeCache.customLut === (customLut ?? null) &&
+    previewNegativeCache.gpuActive === Boolean(colorGpuEngine);
 
-  if (!gpuColorApplied) {
-    if (!isCcd && settings.halation > 0) {
-      applyHalation(target, settings.halation);
-    }
-    applySensitometryAndLUTCPU(target, settings, customLut);
-  }
-
-  // 4. KİMYASAL BANYO & KORUMA KALKANLARI
-  // Bleach Bypass (Gümüş Tutma Banyosu)
-  if (settings.bleachBypass > 0) {
-    applyBleachBypass(target, settings.bleachBypass);
-  }
-
-  // 🛡️ Akıllı Ten Kalkanı
-  if (settings.skinProtection > 0) {
-    applySkinToneProtection(target, sourceImg, rotation, settings, preset, skinMask);
-  }
-
-  // 5. SONLANDIRICI VİNYET & IŞIK DÜŞÜMÜ (Lens Edge Falloff)
-  // Renk derecelendirmesi ve ten kalkanından sonra, ancak film greni ve CCD gürültüsünden ÖNCE uygulanır.
-  // Bu sayede pozlama/gölge ayarları vinyeti bozmaz; film greni vinyetin üzerine doğal doku örer.
-  if (settings.vignette > 0) {
-    applyVignette(target, settings.vignette);
-  }
-
-  // 6. CCD Sensör Kusurları veya Analog Film Sızıntı & Gren Katmanı
-  if (isCcd) {
-    if (settings.lightLeak > 0) {
-      applyLightLeak(target, settings.lightLeak);
-    }
-    applyCcdAesthetic(target, { mode: settings.preset as 'ccd' | 'ccd_y2k' });
+  if (isNegCacheHit && previewNegativeCache) {
+    ctx.drawImage(previewNegativeCache.canvas as CanvasImageSource, 0, 0);
   } else {
-    // Işık Sızıntısı (Light Leak)
-    if (settings.lightLeak > 0) {
-      applyLightLeak(target, settings.lightLeak);
+    // 1. Ham Görsel Çizimi
+    ctx.save();
+    ctx.filter = 'none';
+    drawImageWithRotation(target, sourceImg, rotation);
+    ctx.restore();
+
+    // 2. MERCEK OPTİĞİ
+    let activeDepthCanvas: AnyCanvas | null = options.depthCanvas || null;
+    let tempDepthCanvasCreated = false;
+
+    if (!activeDepthCanvas) {
+      const maxDepthDim = 1536;
+      const depthW = Math.min(w, maxDepthDim);
+      const depthH = Math.max(1, Math.round((h * depthW) / w));
+
+      if (options.depthBitmap) {
+        activeDepthCanvas = new OffscreenCanvas(depthW, depthH);
+        tempDepthCanvasCreated = true;
+        const dCtx = activeDepthCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+        if (dCtx) {
+          dCtx.imageSmoothingEnabled = true;
+          dCtx.imageSmoothingQuality = 'high';
+          dCtx.drawImage(options.depthBitmap, 0, 0, depthW, depthH);
+        }
+      } else if (options.rawDepth && options.depthRoi) {
+        activeDepthCanvas = projectDepthMapFromRaw(options.rawDepth, options.depthRoi, depthW, depthH);
+        tempDepthCanvasCreated = true;
+      }
     }
 
-    // 35mm Analog Film Greni
-    const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
-    if (activeNoise > 0 && noisePattern) {
-      applyFilmGrain(target, noisePattern, activeNoise);
+    // 🤖 3D Fiziksel Alan Derinliği & Helios 44M Swirl Optiği
+    if (settings.aiDepthEnabled && activeDepthCanvas && settings.swirl === 0) {
+      applyDepthOfField(
+        target,
+        activeDepthCanvas,
+        settings.aiFocalDepth,
+        settings.aiDepthAperture
+      );
+    } else if (settings.swirl > 0) {
+      applySwirlyBokeh(
+        target,
+        settings.swirl,
+        activeDepthCanvas,
+        settings.aiFocalDepth,
+        settings.aiDepthAperture,
+        settings.soapBubble ?? 0,
+        settings.loca ?? 0,
+        settings.apertureBlades ?? 0,
+        settings.bladeCurvature ?? 85,
+        options.skinMask
+      );
+    }
+
+    if (tempDepthCanvasCreated && activeDepthCanvas) {
+      activeDepthCanvas.width = 0;
+      activeDepthCanvas.height = 0;
+      activeDepthCanvas = null;
+    }
+
+    // Radyal Kromatik Sapma
+    if (settings.chromatic > 0) {
+      applyChromaticAberration(target, settings.chromatic);
+    }
+
+    // Black Pro-Mist Sisli Parlama
+    if (settings.proMist > 0) {
+      applyBlackProMist(target, settings.proMist);
+    }
+
+    // 3. FİLM EMÜLSİYONU: 650nm Spektral Halasyon + H&D Sensitometri + 3D LUT Tetrahedral Eşleme
+    let gpuColorApplied = false;
+
+    if (colorGpuEngine) {
+      gpuColorApplied = colorGpuEngine.renderToTarget(target, settings, customLut);
+    }
+
+    if (!gpuColorApplied) {
+      if (!isCcd && settings.halation > 0) {
+        applyHalation(target, settings.halation);
+      }
+      applySensitometryAndLUTCPU(target, settings, customLut);
+    }
+
+    // 4. KİMYASAL BANYO & KORUMA KALKANLARI
+    // Bleach Bypass (Gümüş Tutma Banyosu)
+    if (settings.bleachBypass > 0) {
+      applyBleachBypass(target, settings.bleachBypass);
+    }
+
+    // 🛡️ Akıllı Ten Kalkanı
+    if (settings.skinProtection > 0) {
+      applySkinToneProtection(target, sourceImg, rotation, settings, preset, skinMask);
+    }
+
+    // 5. SONLANDIRICI VİNYET & IŞIK DÜŞÜMÜ (Lens Edge Falloff)
+    if (settings.vignette > 0) {
+      applyVignette(target, settings.vignette);
+    }
+
+    // 6. CCD Sensör Kusurları veya Analog Film Sızıntı & Gren Katmanı
+    if (isCcd) {
+      if (settings.lightLeak > 0) {
+        applyLightLeak(target, settings.lightLeak);
+      }
+      applyCcdAesthetic(target, { mode: settings.preset as 'ccd' | 'ccd_y2k' });
+    } else {
+      if (settings.lightLeak > 0) {
+        applyLightLeak(target, settings.lightLeak);
+      }
+
+      const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
+      if (activeNoise > 0 && noisePattern) {
+        applyFilmGrain(target, noisePattern, activeNoise);
+      }
+    }
+
+    if (canUsePreviewNegCache) {
+      let cacheCanvas = previewNegativeCache?.canvas ?? null;
+      let cacheCtx = previewNegativeCache?.ctx ?? null;
+      if (!cacheCanvas || !cacheCtx || cacheCanvas.width !== w || cacheCanvas.height !== h) {
+        if (cacheCanvas) {
+          cacheCanvas.width = 0;
+          cacheCanvas.height = 0;
+        }
+        cacheCanvas = createCompatibleCanvas(w, h);
+        cacheCtx = cacheCanvas.getContext('2d') as
+          | CanvasRenderingContext2D
+          | OffscreenCanvasRenderingContext2D
+          | null;
+      }
+      if (cacheCanvas && cacheCtx) {
+        cacheCtx.clearRect(0, 0, w, h);
+        cacheCtx.drawImage(target.canvas as CanvasImageSource, 0, 0);
+        previewNegativeCache = {
+          canvas: cacheCanvas,
+          ctx: cacheCtx,
+          width: w,
+          height: h,
+          key: negKey,
+          sourceImg,
+          noisePattern,
+          depthCanvas: options.depthCanvas ?? null,
+          depthBitmap: options.depthBitmap ?? null,
+          rawDepth: options.rawDepth ?? null,
+          skinMask,
+          customLut: customLut ?? null,
+          gpuActive: Boolean(colorGpuEngine)
+        };
+      }
     }
   }
 
@@ -315,5 +430,13 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
 
   if (settings.quartzDate) {
     applyQuartzDate(target, settings.quartzDate, settings.quartzDateText);
+  }
+}
+
+export function clearPreviewNegativeCache(): void {
+  if (previewNegativeCache) {
+    previewNegativeCache.canvas.width = 0;
+    previewNegativeCache.canvas.height = 0;
+    previewNegativeCache = null;
   }
 }

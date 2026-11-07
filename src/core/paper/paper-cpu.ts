@@ -17,6 +17,22 @@ import { getOrBuildToningLUT1D, sampleToningLUT1D } from './toning-lut';
 const INV_LN_10 = 1.0 / LN_10;
 const NEG_INV_LOG_DENOM = 1.0 / (Math.log(1.0 + NEGATIVE_FILM_CONSTANTS.logCompressionK) * INV_LN_10);
 
+const SRGB_8BIT_TO_LINEAR = (() => {
+  const table = new Float64Array(256);
+  for (let i = 0; i < 256; i++) {
+    table[i] = srgbToLinear(i / 255);
+  }
+  return table;
+})();
+
+const LINEAR_TO_SRGB_8BIT = (() => {
+  const table = new Uint8Array(65537);
+  for (let i = 0; i <= 65536; i++) {
+    table[i] = Math.round(linearToSrgb(i / 65536) * 255);
+  }
+  return table;
+})();
+
 function clamp(v: number, min: number, max: number): number {
   return v < min ? min : v > max ? max : v;
 }
@@ -258,9 +274,9 @@ export function applyPaperPrintCPU(
       const xMm = u * fullWidthMm;
 
       // 0. Sahne/film-lineer uzaya açılım
-      const lr = srgbToLinear(data[idx] / 255);
-      const lg = srgbToLinear(data[idx + 1] / 255);
-      const lb = srgbToLinear(data[idx + 2] / 255);
+      const lr = SRGB_8BIT_TO_LINEAR[data[idx]];
+      const lg = SRGB_8BIT_TO_LINEAR[data[idx + 1]];
+      const lb = SRGB_8BIT_TO_LINEAR[data[idx + 2]];
       const yFilm = lwR * lr + lwG * lg + lwB * lb;
 
       // 1. Negatif geçirgenliği ve Agrandizör + Dodge/Burn pozu
@@ -302,9 +318,9 @@ export function applyPaperPrintCPU(
       const linOutB = clamp(reflectance * toneMul[2] * baseB * texMul, 0.0, 1.0);
 
       // 6. Tek noktada ekran dönüşümü
-      data[idx] = Math.round(linearToSrgb(linOutR) * 255);
-      data[idx + 1] = Math.round(linearToSrgb(linOutG) * 255);
-      data[idx + 2] = Math.round(linearToSrgb(linOutB) * 255);
+      data[idx] = LINEAR_TO_SRGB_8BIT[(linOutR * 65536 + 0.5) | 0];
+      data[idx + 1] = LINEAR_TO_SRGB_8BIT[(linOutG * 65536 + 0.5) | 0];
+      data[idx + 2] = LINEAR_TO_SRGB_8BIT[(linOutB * 65536 + 0.5) | 0];
     }
   }
 
