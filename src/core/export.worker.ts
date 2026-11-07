@@ -9,6 +9,7 @@ import {
 import { createNoisePattern } from './optics';
 import { setCustomCubeLUT } from './lut3d';
 import { ColorLutWebGPUEngine } from './webgpu/ColorLutWebGPUEngine';
+import { FilmChemistryWebGPUEngine } from './webgpu/FilmChemistryWebGPUEngine';
 import { HeliosWebGPUEngine } from './webgpu/HeliosWebGPUEngine';
 import { PaperPrintWebGPUEngine } from './webgpu/PaperPrintWebGPUEngine';
 import { AspectROI } from './aspect-shield';
@@ -69,6 +70,7 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     await Promise.all([
       HeliosWebGPUEngine.getOrCreate(),
       ColorLutWebGPUEngine.getOrCreate(),
+      FilmChemistryWebGPUEngine.getOrCreate(),
       PaperPrintWebGPUEngine.getOrCreate()
     ]);
 
@@ -162,6 +164,7 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
       offscreenCanvas.height = 0;
       offscreenCanvas = null;
     }
+    FilmChemistryWebGPUEngine.getInstanceSync()?.releaseScratchResources();
     PaperPrintWebGPUEngine.getInstanceSync()?.releaseScratchResources();
     imageBitmap.close();
     if (depthBitmap) {

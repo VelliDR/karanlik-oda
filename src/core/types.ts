@@ -66,6 +66,22 @@ export interface DodgeBurnMap {
 }
 
 
+export type StripOrientation = 'horizontal' | 'vertical';
+
+export type StripOutputMode = 'positive' | 'negative' | 'contact';
+
+export type StripResolutionPreset = 2400 | 3600 | 4800 | 6000;
+
+export interface StripConfig {
+  orientation: StripOrientation;
+  outputMode: StripOutputMode;
+  edgeText: string;
+  sprocketHalation: boolean;
+  greasePencilMark: boolean;
+  markedFrameIds: string[];
+  longEdgePx: StripResolutionPreset;
+}
+
 export interface PresetDefinition {
   id: PresetKey;
   name: string;
@@ -73,6 +89,8 @@ export interface PresetDefinition {
   noise: number;
   defaultShoulder?: number;
   defaultHalation?: number;
+  defaultPushPull?: number;  // Faz 3: Varsayılan Push/Pull stop değeri (hp5 = 0, sb = +2.0)
+  nominalPushStops?: number; // Faz 3: Profilin yerleşik kalibrasyon push stop değeri
   sensitometry: SensitometryParams;
   description?: string;
 }
@@ -103,6 +121,12 @@ export interface SliderSettings {
   lightLeak: number;    // 0 to 100 (Analog ışık sızıntısı)
   bleachBypass: number; // 0 to 100 (Gümüş tutma banyosu)
   skinProtection: number; // 0 to 100 (Akıllı En-Boy Oranı Korumalı Ten Kalkanı)
+
+  // Faz 3: Karanlık Oda Banyo Kimyası (Negatif Geliştirme Fiziksel Modelleri)
+  devPushPull?: number;     // -2.0 to +3.0 stop (Yalnızca S/B profillerinde aktif: hp5, sb)
+  devExhaustion?: number;   // 0.0 to 1.0 (Developer tükenmesi — geniş difüzyon kazanç düşümü)
+  devEdgeEffect?: number;   // 0.0 to 1.0 (Kostinsky / Mackie kenar keskinliği difüzyonu)
+  devReticulation?: number; // 0.0 to 1.0 (Termal şok jelatin çatlaması ve gren kümelenmesi; varsayılan 0)
 
   // Vintage Optik Kusurlar
   swirl: number;        // 0 to 100 (Helios 44M dönen bokeh)

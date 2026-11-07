@@ -1,5 +1,6 @@
 import { CubeLUT3D, PresetKey, RenderTarget, SensitometryParams, SliderSettings } from './types';
 import { PRESETS } from './presets';
+import { resolveEffectivePushPull } from './chemistry/push-pull';
 
 /**
  * 🎞️ 3D LUT (.cube), Tetrahedral Enterpolasyon ve Hurter & Driffield (H&D) Sensitometri Motoru.
@@ -694,11 +695,13 @@ export function applySensitometryAndLUTCPU(
   }
 
   const preset = PRESETS[settings.preset] || PRESETS.none;
+  const pushPull = resolveEffectivePushPull(settings, preset);
+  const effExp = pushPull.effectiveExposureSlider;
   const lut =
     settings.preset === 'custom_lut' && customLutOverride
       ? customLutOverride
       : getActiveLUT3D(settings.preset);
-  const sensitometry = preset.sensitometry;
+  const sensitometry = pushPull.sensitometry;
 
   const imgData = ctx.getImageData(0, 0, w, h);
   const data = imgData.data;
@@ -712,7 +715,7 @@ export function applySensitometryAndLUTCPU(
     const bIn = data[i + 2] / 255;
 
     // 1. H&D Sensitometri, Ton Ayarları & Film Omzu Sıkıştırması
-    applyHDSensitometryRGB(rIn, gIn, bIn, exp, con, shld, warm, 0, sensitometry, hdOut, hl, sh, wh, bl, tint);
+    applyHDSensitometryRGB(rIn, gIn, bIn, effExp, con, shld, warm, 0, sensitometry, hdOut, hl, sh, wh, bl, tint);
 
     // 2. 3D LUT Dörtyüzlü (Tetrahedral) Enterpolasyon
     sampleLUT3DTetrahedral(lut, hdOut[0], hdOut[1], hdOut[2], lutOut);

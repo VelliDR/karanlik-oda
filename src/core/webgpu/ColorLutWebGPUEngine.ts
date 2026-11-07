@@ -1,6 +1,7 @@
 import { CubeLUT3D, RenderTarget, SliderSettings } from '../types';
 import { PRESETS } from '../presets';
 import { getActiveLUT3D } from '../lut3d';
+import { resolveEffectivePushPull } from '../chemistry/push-pull';
 import { getSharedGPUDevice, isWebGPUSupported } from './gpuDeviceManager';
 
 /**
@@ -723,11 +724,12 @@ export class ColorLutWebGPUEngine {
         [w, h]
       );
 
-      const sens = preset.sensitometry;
+      const pushPull = resolveEffectivePushPull(settings, preset);
+      const sens = pushPull.sensitometry;
       const uniformData = new Float32Array([
         w,
         h,
-        settings.exposure,
+        pushPull.effectiveExposureSlider,
         settings.contrast,
         shld,
         settings.saturation,

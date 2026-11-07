@@ -34,6 +34,7 @@ import {
 } from './paper/dodge-burn';
 import { HeliosWebGPUEngine } from './webgpu/HeliosWebGPUEngine';
 import { ColorLutWebGPUEngine } from './webgpu/ColorLutWebGPUEngine';
+import { FilmChemistryWebGPUEngine } from './webgpu/FilmChemistryWebGPUEngine';
 import { PaperPrintWebGPUEngine } from './webgpu/PaperPrintWebGPUEngine';
 
 import {
@@ -76,6 +77,10 @@ export const DEFAULT_SETTINGS: SliderSettings = {
   lightLeak: 0,
   bleachBypass: 0,
   skinProtection: 0,
+
+  devExhaustion: 0,
+  devEdgeEffect: 0,
+  devReticulation: 0,
 
   swirl: 0,
   soapBubble: 0,
@@ -168,10 +173,11 @@ export class PhotoEditor {
   private skinMaskTargetWidth = 0;
   private skinMaskTargetHeight = 0;
 
-  // 📸 RAW Görsel Durumu
+  // 📸 RAW ve Aktif Kaynak Görsel Durumu
   private isRaw = false;
   private rawBuffer: ArrayBuffer | null = null;
   private rawMetadata: RawMetadata | null = null;
+  private sourceBlobRef: Blob | null = null;
 
   public get isRawImage(): boolean {
     return this.isRaw;
@@ -181,6 +187,10 @@ export class PhotoEditor {
     return this.rawMetadata;
   }
 
+  public get currentSourceBlob(): Blob | null {
+    return this.sourceBlobRef;
+  }
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = getOptimal2DContext(canvas);
@@ -188,9 +198,10 @@ export class PhotoEditor {
     Promise.all([
       HeliosWebGPUEngine.getOrCreate(),
       ColorLutWebGPUEngine.getOrCreate(),
+      FilmChemistryWebGPUEngine.getOrCreate(),
       PaperPrintWebGPUEngine.getOrCreate()
-    ]).then(([helios, colorLut, paperPrint]) => {
-      if ((helios || colorLut || paperPrint) && this.hasImage) {
+    ]).then(([helios, colorLut, filmChem, paperPrint]) => {
+      if ((helios || colorLut || filmChem || paperPrint) && this.hasImage) {
         this.scheduleRender();
       }
     });
@@ -256,6 +267,7 @@ export class PhotoEditor {
     this.isRaw = false;
     this.rawBuffer = null;
     this.rawMetadata = null;
+    this.sourceBlobRef = blob;
 
     // 1. Orijinal dosyanın EXIF ve ICC profil segmentlerini koruma için çıkar
     try {
@@ -320,6 +332,7 @@ export class PhotoEditor {
     this.dodgeBurnMap = null;
 
     this.isRaw = true;
+    this.sourceBlobRef = file;
     const rawBuf = await file.arrayBuffer();
     this.rawBuffer = rawBuf;
 
@@ -1292,8 +1305,10 @@ export class PhotoEditor {
     this.cleanupDepth();
     this.cleanupSkinMask();
     clearPreviewNegativeCache();
+    FilmChemistryWebGPUEngine.getInstanceSync()?.releaseScratchResources();
     PaperPrintWebGPUEngine.getInstanceSync()?.releaseScratchResources();
     this.dodgeBurnMap = null;
+    this.sourceBlobRef = null;
     if (this.depthWorker) {
       this.depthWorker.terminate();
       this.depthWorker = null;

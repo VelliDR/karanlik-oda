@@ -24,8 +24,11 @@ import {
   createCompatibleCanvas
 } from '../optics';
 import { applySensitometryAndLUTCPU, getCustomCubeLUT } from '../lut3d';
+import { applyDeveloperChemistryCPU, applyReticulationCPU } from '../chemistry/chemistry-cpu';
+import { resolveEffectivePushPull } from '../chemistry/push-pull';
 import { applyPaperPrintCPU } from '../paper/paper-cpu';
 import { ColorLutWebGPUEngine } from '../webgpu/ColorLutWebGPUEngine';
+import { FilmChemistryWebGPUEngine } from '../webgpu/FilmChemistryWebGPUEngine';
 import { PaperPrintWebGPUEngine } from '../webgpu/PaperPrintWebGPUEngine';
 import { AspectROI, generateSkinProtectionMask, projectDepthMapFromRaw } from '../aspect-shield';
 
@@ -185,6 +188,10 @@ function buildNegativeStageKey(
     s.lightLeak,
     s.bleachBypass,
     s.skinProtection,
+    s.devPushPull ?? '',
+    s.devExhaustion ?? 0,
+    s.devEdgeEffect ?? 0,
+    s.devReticulation ?? 0,
     s.swirl,
     s.soapBubble ?? 0,
     s.loca ?? 0,
@@ -204,12 +211,14 @@ function buildNegativeStageKey(
  *
  * Fiziksel Işık Yolu:
  * 1. Ham Görsel & Mercek Optiği (3D DoF, Helios 44M Swirl, Chromatic Aberration, Black Pro-Mist)
- * 2. Film Emülsiyonu & Taban Kırılması (650nm Spektral Halasyon + H&D S-Eğrisi + 3D LUT Tetrahedral Enterpolasyon)
- * 3. Kimyasal Banyo & Koruma Kalkanları (Bleach Bypass, Akıllı Ten Kalkanı)
- * 4. Sonlandırıcı Vinyet & Optik Işık Düşümü (Pozlama/gölge ayarları vinyeti bozmaz)
- * 5. CCD Sensör Kusurları veya 35mm Nutting-Weibull Film Greni (Gren vinyetin üzerine doğal oturur)
- * 6. Faz 1 Kağıda Baskı (Multigrade / Split-Grade, Dodge/Burn, Selenyum/Sepya Toning, 300 DPI Kağıt Dokusu)
- * 7. Film Çerçevesi & 90'lar Quartz Date LED Tarih Damgası
+ * 2. Film Emülsiyonu & Taban Kırılması (650nm Spektral Halasyon + Push/Pull H&D S-Eğrisi + 3D LUT Tetrahedral Enterpolasyon)
+ * 3.5. Faz 3 Banyo Difüzyon Kimyası (Kostinsky Kenar Etkisi + Eberhard Developer Tükenmesi — mm yarıçaplı)
+ * 4. Kimyasal Banyo & Koruma Kalkanları (Bleach Bypass, Akıllı Ten Kalkanı)
+ * 5. Sonlandırıcı Vinyet & Optik Işık Düşümü (Pozlama/gölge ayarları vinyeti bozmaz)
+ * 6. CCD Sensör Kusurları veya 35mm Nutting-Weibull Film Greni (Push/Pull gren çarpanı dahil)
+ * 6.5. Faz 3 Reticulation (Termal Şok Jelatin Çatlaması & Gren Kümelenmesi — gren geçişinden sonra)
+ * 7. Faz 1 Kağıda Baskı (Multigrade / Split-Grade, Dodge/Burn, Selenyum/Sepya Toning, 300 DPI Kağıt Dokusu)
+ * 8. Film Çerçevesi & 90'lar Quartz Date LED Tarih Damgası
  */
 export function executeRenderPipeline(options: PipelineRenderOptions): void {
   const {
@@ -234,8 +243,11 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
   const preset = PRESETS[settings.preset] || PRESETS.none;
   const isCcd = settings.preset === 'ccd' || settings.preset === 'ccd_y2k';
   const colorGpuEngine = ColorLutWebGPUEngine.getInstanceSync();
+  const chemGpuEngine = FilmChemistryWebGPUEngine.getInstanceSync();
   const canUsePreviewNegCache = Boolean(settings.printEnabled) && w > 0 && h > 0 && w * h <= 4_194_304;
-  const negKey = canUsePreviewNegCache ? buildNegativeStageKey(w, h, rotation, settings) : '';
+  const negKey = canUsePreviewNegCache
+    ? `${buildNegativeStageKey(w, h, rotation, settings)}|${chemGpuEngine ? 1 : 0}`
+    : '';
 
   const isNegCacheHit =
     canUsePreviewNegCache &&
@@ -324,7 +336,7 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
       applyBlackProMist(target, settings.proMist);
     }
 
-    // 3. FİLM EMÜLSİYONU: 650nm Spektral Halasyon + H&D Sensitometri + 3D LUT Tetrahedral Eşleme
+    // 3. FİLM EMÜLSİYONU: 650nm Spektral Halasyon + Push/Pull H&D Sensitometri + 3D LUT Tetrahedral Eşleme
     let gpuColorApplied = false;
 
     if (colorGpuEngine) {
@@ -336,6 +348,17 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
         applyHalation(target, settings.halation);
       }
       applySensitometryAndLUTCPU(target, settings, customLut);
+    }
+
+    // 3.5. FAZ 3 BANYO DİFÜZYON KİMYASI (Kostinsky Kenar Etkisi + Eberhard Developer Tükenmesi)
+    // Milimetre yarıçaplı difüzyon; her iki sürgü de 0 iken 0 maliyetle tamamen atlanır.
+    if (!isCcd && ((settings.devExhaustion ?? 0) > 1e-5 || (settings.devEdgeEffect ?? 0) > 1e-5)) {
+      const gpuChemApplied = chemGpuEngine
+        ? chemGpuEngine.renderChemistryToTarget(target, settings)
+        : false;
+      if (!gpuChemApplied) {
+        applyDeveloperChemistryCPU(target, settings);
+      }
     }
 
     // 4. KİMYASAL BANYO & KORUMA KALKANLARI
@@ -365,9 +388,25 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
         applyLightLeak(target, settings.lightLeak);
       }
 
-      const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
+      const pushPullState = resolveEffectivePushPull(settings, preset);
+      const baseNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
+      const activeNoise =
+        pushPullState.grainMultiplier === 1.0
+          ? baseNoise
+          : baseNoise * pushPullState.grainMultiplier;
       if (activeNoise > 0 && noisePattern) {
         applyFilmGrain(target, noisePattern, activeNoise);
+      }
+
+      // 6.5. FAZ 3 RETICULATION (Jelatin Termal Çatlaması ve Gümüş Gren Kümelenmesi)
+      // Spesifikasyon gereği gren geçişinden hemen sonra uygulanır; varsayılan (0) iken atlanır.
+      if ((settings.devReticulation ?? 0) > 1e-5) {
+        const gpuReticApplied = chemGpuEngine
+          ? chemGpuEngine.renderReticulationToTarget(target, settings)
+          : false;
+        if (!gpuReticApplied) {
+          applyReticulationCPU(target, settings);
+        }
       }
     }
 

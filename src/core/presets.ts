@@ -76,6 +76,8 @@ export const PRESETS: Record<PresetKey, PresetDefinition> = {
     noise: 0.13,
     defaultShoulder: 66,
     defaultHalation: 14,
+    defaultPushPull: 0.0,
+    nominalPushStops: 0.0,
     sensitometry: {
       toeStrength: 0.46,
       gammaSlope: 1.04,
@@ -93,6 +95,8 @@ export const PRESETS: Record<PresetKey, PresetDefinition> = {
     noise: 0.18,
     defaultShoulder: 56,
     defaultHalation: 18,
+    defaultPushPull: 2.0,
+    nominalPushStops: 2.0,
     sensitometry: {
       toeStrength: 0.20,
       gammaSlope: 1.38,
