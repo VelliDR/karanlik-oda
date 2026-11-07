@@ -1,6 +1,7 @@
 import {
   ExportFormat,
   FilmBorder,
+  PaperType,
   PresetKey
 } from '../types';
 
@@ -58,6 +59,18 @@ export interface EditSettingsOptics {
   };
 }
 
+export interface EditSettingsPaperPrint {
+  enabled: boolean;
+  exposure: number;       // -3.0 to +3.0 stop
+  grade: number;          // -0.5 (00) to 5.0 (5)
+  splitGrade: boolean;
+  splitRatio: number;     // 0.0 to 1.0
+  paperType: PaperType;
+  paperTone: number;      // 0.0 to 1.0
+  selenium: number;       // 0.0 to 1.0
+  sepia: number;          // 0.0 to 1.0
+}
+
 export interface EditSettingsOutput {
   quartzDate: boolean;
   quartzDateText: string;
@@ -73,6 +86,7 @@ export interface EditSettings {
   effects: EditSettingsEffects;
   analog: EditSettingsAnalog;
   optics: EditSettingsOptics;
+  paperPrint: EditSettingsPaperPrint;
   output: EditSettingsOutput;
 }
 
@@ -120,6 +134,17 @@ export const DEFAULT_EDIT_SETTINGS: EditSettings = {
       focalDepth: 0.5,
       showMap: false
     }
+  },
+  paperPrint: {
+    enabled: false,
+    exposure: 0,
+    grade: 2.0,
+    splitGrade: false,
+    splitRatio: 0.5,
+    paperType: 'rc-glossy',
+    paperTone: 0,
+    selenium: 0,
+    sepia: 0
   },
   output: {
     quartzDate: false,

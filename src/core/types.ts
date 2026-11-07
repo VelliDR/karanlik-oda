@@ -54,6 +54,17 @@ export type FilmBorder = 'none' | 'clean-white' | 'darkroom-black' | 'kodak-35mm
 
 export type ExportFormat = 'image/png' | 'image/jpeg' | 'image/webp';
 
+export type PaperType = 'rc-glossy' | 'rc-matte' | 'fiber-baryta';
+
+export type DodgeBurnToolMode = 'off' | 'dodge' | 'burn' | 'erase';
+
+export interface DodgeBurnMap {
+  width: number;
+  height: number;
+  data: Float32Array; // Stop cinsinden yerel poz farkı [-3.0, +3.0]
+  version: number;
+}
+
 
 export interface PresetDefinition {
   id: PresetKey;
@@ -109,6 +120,17 @@ export interface SliderSettings {
   aiFocalDepth: number;       // 0.0 to 1.0 (Odak düzleminin derinliği)
   aiShowDepthMap: boolean;    // Derinlik haritası görsel önizleme modu (S/B)
 
+  // Faz 1: Karanlık Oda Kağıda Baskı (Agrandizör & Multigrade Kağıt Katmanı)
+  printEnabled?: boolean;      // Baskı katmanı açık/kapalı (kapalıyken 0 maliyet)
+  printExposure?: number;      // -3.0 to +3.0 stop (Agrandizör pozu)
+  printGrade?: number;         // -0.5 (00) to 5.0 (5), 0.5 adımlı Multigrade filtre derecesi
+  printSplitGrade?: boolean;   // Split-grade (00 + 5 çift pozlama) modu
+  printSplitRatio?: number;    // 0.0 to 1.0 (Sert katman poz oranı; 0 = %100 00, 1 = %100 5)
+  printPaperType?: PaperType;  // 'rc-glossy' | 'rc-matte' | 'fiber-baryta'
+  printPaperTone?: number;     // 0.0 (nötr beyaz) to 1.0 (sıcak krem)
+  printSelenium?: number;      // 0.0 to 1.0 (Selenyum gölge yoğunluk ve mor-kahve tonlama)
+  printSepia?: number;         // 0.0 to 1.0 (Sepya açık/orta ton sülfür sıcak kahve tonlama)
+
   // Baskı & Çıktı Formatı
   quartzDate: boolean;
   quartzDateText: string;
@@ -122,6 +144,7 @@ export type RotationDegree = 0 | 90 | 180 | 270;
 export interface EditorSnapshot {
   settings: SliderSettings;
   rotation: RotationDegree;
+  dodgeBurnMap?: DodgeBurnMap | null;
 }
 
 export type AnyCanvas = HTMLCanvasElement | OffscreenCanvas;

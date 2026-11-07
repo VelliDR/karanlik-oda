@@ -2,9 +2,14 @@ import { SliderSettings } from '../core/types';
 import { RawMetadata } from '../core/raw/libraw-types';
 import { SmartRecipeSuggestion } from '../core/smart-recipe';
 
+export type WorkspaceMode = 'develop' | 'print';
+
 export type ToolTab = 'light' | 'color' | 'film' | 'optics' | 'histogram' | 'finishing';
 
+export type PrintSubTab = 'enlarger' | 'paper' | 'dodgeburn' | 'finishing';
+
 export interface UIState {
+  workspaceMode: WorkspaceMode;
   activeTab: ToolTab;
   settings: SliderSettings;
   rotation: number;
