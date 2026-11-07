@@ -60,7 +60,16 @@ struct ColorUniforms {
   domainMaxB: f32,
   pad0: f32,
   pad1: f32,
+  highlights: f32,
+  shadows: f32,
+  whites: f32,
+  blacks: f32,
+  tint: f32,
+  vibrance: f32,
+  clarity: f32,
+  dehaze: f32,
 };
+
 
 @group(0) @binding(0) var<uniform> u: ColorUniforms;
 @group(0) @binding(1) var imageTexture: texture_2d<f32>;
@@ -299,7 +308,38 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   let expGain = pow(2.0, evStops);
   linearRgb *= expGain;
 
-  // 3. Bradford / Planckian Kromatik Sıcaklık Adaptasyonu
+  // 3. Lightroom İnce Ton Kontrolleri (Lineer Foton Uzayında)
+  let lumaLin = dot(linearRgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+
+  // Siyah Noktası (Blacks: taban seviyesini kaldır veya bastır)
+  if (abs(u.blacks) > 0.001) {
+    let bWeight = pow(1.0 - clamp(lumaLin / 0.28, 0.0, 1.0), 2.0);
+    let bOffset = (u.blacks / 100.0) * 0.075;
+    linearRgb = max(vec3<f32>(0.0), linearRgb + vec3<f32>(bOffset * bWeight));
+  }
+
+  // Gölgeler (Shadows: koyu tonları aç veya derinleştir)
+  if (abs(u.shadows) > 0.001) {
+    let sWeight = 1.0 - smoothstep(0.0, 0.45, lumaLin);
+    let sGain = pow(2.0, (u.shadows / 100.0) * 1.35);
+    linearRgb *= mix(1.0, sGain, sWeight);
+  }
+
+  // Vurgular (Highlights: parlak tonları kurtar veya parlat)
+  if (abs(u.highlights) > 0.001) {
+    let hWeight = smoothstep(0.22, 1.0, lumaLin);
+    let hGain = pow(2.0, (u.highlights / 100.0) * 1.25);
+    linearRgb *= mix(1.0, hGain, hWeight);
+  }
+
+  // Beyazlar (Whites: en tepe aydınlık tavanını ayarla)
+  if (abs(u.whites) > 0.001) {
+    let wWeight = smoothstep(0.60, 1.0, lumaLin);
+    let wGain = 1.0 + (u.whites / 100.0) * 0.45;
+    linearRgb *= mix(1.0, wGain, wWeight);
+  }
+
+  // 4. Bradford / Planckian Kromatik Sıcaklık & Yeşil-Magenta Tint Adaptasyonu
   if (abs(u.warmth) > 0.001) {
     let w = u.warmth / 100.0;
     let adapt = vec3<f32>(
@@ -310,7 +350,17 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     linearRgb *= adapt;
   }
 
-  // 4. Hurter & Driffield (H&D) Sensitometri & Film Omzu (Shoulder) Sıkıştırması
+  if (abs(u.tint) > 0.001) {
+    let t = (u.tint / 100.0) * 0.16;
+    let tintAdapt = vec3<f32>(
+      1.0 + t * 0.5,
+      1.0 - t,
+      1.0 + t * 0.5
+    );
+    linearRgb *= tintAdapt;
+  }
+
+  // 5. Hurter & Driffield (H&D) Sensitometri & Film Omzu (Shoulder) Sıkıştırması
   let contrastFactor = pow(2.0, (u.contrast / 100.0) * 0.58);
   let effectiveGamma = clamp(u.gammaSlope * contrastFactor, 0.55, 2.1);
   let userShoulder = clamp(u.shoulder / 100.0, 0.0, 1.0);
@@ -326,7 +376,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     eval_hd_channel(linearRgb.b, effectiveGamma, u.toeStrength, effectiveShoulder, u.dMin, u.dMax)
   );
 
-  // 5. Film Omzunda Çapraz Kanal Doygunluk Sönümlenmesi (Highlight Shoulder Desaturation)
+  // 6. Film Omzunda Çapraz Kanal Doygunluk Sönümlenmesi (Highlight Shoulder Desaturation)
   let maxCh = max(hdRgb.r, max(hdRgb.g, hdRgb.b));
   let lumaPre = dot(hdRgb, vec3<f32>(0.2126, 0.7152, 0.0722));
   let shoulderZone = smoothstep(0.66, 0.98, maxCh);
@@ -337,10 +387,21 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     hdRgb = mix(hdRgb, warmPaper, desatAmt);
   }
 
-  // 6. 3D LUT (texture_3d<f32>) Dörtyüzlü (Tetrahedral) Enterpolasyon
+  // 7. 3D LUT (texture_3d<f32>) Dörtyüzlü (Tetrahedral) Enterpolasyon
   var gradedRgb = sample_lut_tetrahedral(hdRgb);
 
-  // 7. Omuz Korumalı Fotometrik Doygunluk
+  // 8. Akıllı Canlılık (Vibrance: teni ve doymuş renkleri koruyarak mat alanları güçlendirir)
+  if (abs(u.vibrance) > 0.001) {
+    let maxC = max(gradedRgb.r, max(gradedRgb.g, gradedRgb.b));
+    let minC = min(gradedRgb.r, min(gradedRgb.g, gradedRgb.b));
+    let curSat = (maxC - minC) / max(0.001, maxC);
+    let vibWeight = 1.0 - curSat;
+    let vibGain = 1.0 + (u.vibrance / 100.0) * 0.85 * vibWeight;
+    let lumaV = dot(gradedRgb, vec3<f32>(0.2126, 0.7152, 0.0722));
+    gradedRgb = clamp(vec3<f32>(lumaV) + (gradedRgb - vec3<f32>(lumaV)) * vibGain, vec3<f32>(0.0), vec3<f32>(1.0));
+  }
+
+  // 9. Omuz Korumalı Fotometrik Doygunluk
   if (abs(u.saturation) > 0.001) {
     let lumaPost = dot(gradedRgb, vec3<f32>(0.2126, 0.7152, 0.0722));
     let rawSat = max(0.0, 1.0 + (u.saturation / 100.0) * 0.85);
@@ -448,12 +509,13 @@ export class ColorLutWebGPUEngine {
       addressModeV: 'clamp-to-edge'
     });
 
-    // 24 float = 96 byte (16-byte hizalı)
+    // 32 float = 128 byte (16-byte hizalı)
     this.uniformBuffer = this.device.createBuffer({
       label: 'ColorLut Uniform Buffer',
-      size: 96,
+      size: 128,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
+
 
     this.gpuCanvas = new OffscreenCanvas(256, 256);
     const ctx = this.gpuCanvas.getContext('webgpu') as GPUCanvasContext | null;
@@ -612,6 +674,13 @@ export class ColorLutWebGPUEngine {
     const effectiveHalation = isCcd ? 0 : (settings.halation ?? 0);
     const shld = settings.shoulder ?? 0;
 
+    const hl = settings.highlights ?? 0;
+    const sh = settings.shadows ?? 0;
+    const wh = settings.whites ?? 0;
+    const bl = settings.blacks ?? 0;
+    const tint = settings.tint ?? 0;
+    const vib = settings.vibrance ?? 0;
+
     // Saf Orijinal (none) ve tüm ayarlar sıfır ise işlem yapmadan birebir koru
     if (
       settings.preset === 'none' &&
@@ -620,6 +689,12 @@ export class ColorLutWebGPUEngine {
       shld === 0 &&
       settings.warmth === 0 &&
       settings.saturation === 0 &&
+      hl === 0 &&
+      sh === 0 &&
+      wh === 0 &&
+      bl === 0 &&
+      tint === 0 &&
+      vib === 0 &&
       effectiveHalation === 0
     ) {
       return true;
@@ -685,8 +760,17 @@ export class ColorLutWebGPUEngine {
         lut.domainMax[1],
         lut.domainMax[2],
         this.lutUseFloat32 ? 1.0 : 0.0,
-        0.0
+        0.0,
+        hl,
+        sh,
+        wh,
+        bl,
+        tint,
+        vib,
+        settings.clarity ?? 0,
+        settings.dehaze ?? 0
       ]);
+
 
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 

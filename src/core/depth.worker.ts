@@ -12,7 +12,11 @@ let isInitializing = false;
 // COOP/COEP başlıkları olmayan ortamlarda veya Safari'de SharedArrayBuffer desteklenmez.
 // Bu durumda numThreads = 1 ayarlanarak kilitlenme ve thread çökmesi engellenir.
 const hasSharedArrayBuffer = typeof SharedArrayBuffer !== 'undefined';
-ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/';
+// Üretim derlemesinde Vite yerel ort-wasm dosyasını assets/ içine paketler ve Service Worker precache eder.
+// Sadece dev ortamında CDN kullanılır.
+if (import.meta.env.DEV) {
+  ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.31.1/dist/';
+}
 ort.env.wasm.numThreads = hasSharedArrayBuffer
   ? Math.min(4, typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2)
   : 1;

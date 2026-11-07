@@ -3,30 +3,17 @@ import {
   CubeLUT3D,
   EditorSnapshot,
   ExportFormat,
-  PresetDefinition,
   RenderTarget,
   RotationDegree,
   SliderSettings
 } from './types';
 import { PRESETS } from './presets';
 import {
-  applyBlackProMist,
-  applyBleachBypass,
-  applyCcdAesthetic,
-  applyChromaticAberration,
-  applyDepthOfField,
-  applyFilmBorder,
-  applyFilmGrain,
-  applyHalation,
-  applyLightLeak,
-  applyQuartzDate,
-  applySwirlyBokeh,
-  applyVignette,
   createCompatibleCanvas,
   createNoisePattern
 } from './optics';
+import { executeRenderPipeline, drawImageWithRotation } from './pipeline/render-pipeline';
 import {
-  applySensitometryAndLUTCPU,
   getCustomCubeLUT,
   parseCubeLUT,
   setCustomCubeLUT
@@ -48,6 +35,8 @@ import {
   PrintDimensions
 } from './metadata';
 import { analyzeAndRecommendRecipe, SmartRecipeSuggestion } from './smart-recipe';
+import { RawMetadata } from './raw/libraw-types';
+import { RawWorkerOutputMessage } from './raw/raw.worker';
 
 export const DEFAULT_SETTINGS: SliderSettings = {
   exposure: 0,
@@ -56,6 +45,16 @@ export const DEFAULT_SETTINGS: SliderSettings = {
   saturation: 0,
   warmth: 0,
   preset: 'none',
+
+  highlights: 0,
+  shadows: 0,
+  whites: 0,
+  blacks: 0,
+  tint: 0,
+  vibrance: 0,
+  texture: 0,
+  clarity: 0,
+  dehaze: 0,
 
   halation: 0,
   grain: 0,
@@ -137,6 +136,19 @@ export class PhotoEditor {
   private skinMaskTargetWidth = 0;
   private skinMaskTargetHeight = 0;
 
+  // 📸 RAW Görsel Durumu
+  private isRaw = false;
+  private rawBuffer: ArrayBuffer | null = null;
+  private rawMetadata: RawMetadata | null = null;
+
+  public get isRawImage(): boolean {
+    return this.isRaw;
+  }
+
+  public get currentRawMetadata(): RawMetadata | null {
+    return this.rawMetadata;
+  }
+
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
     this.ctx = getOptimal2DContext(canvas);
@@ -167,17 +179,24 @@ export class PhotoEditor {
     return lut;
   }
 
-
   public get hasImage(): boolean {
-    return this.originalImg !== null;
+    return this.originalImg !== null || this.previewImg !== null || this.rawBuffer !== null;
   }
 
   public get originalDimensions(): { width: number; height: number } | null {
-    if (!this.originalImg) return null;
     const isTransposed = this.rotation === 90 || this.rotation === 270;
+    if (this.isRaw && this.rawMetadata) {
+      return {
+        width: isTransposed ? this.rawMetadata.height : this.rawMetadata.width,
+        height: isTransposed ? this.rawMetadata.width : this.rawMetadata.height
+      };
+    }
+    if (!this.originalImg && !this.previewImg) return null;
+    const imgW = this.originalImg ? this.originalImg.naturalWidth : (this.previewImg as ImageBitmap).width;
+    const imgH = this.originalImg ? this.originalImg.naturalHeight : (this.previewImg as ImageBitmap).height;
     return {
-      width: isTransposed ? this.originalImg.naturalHeight : this.originalImg.naturalWidth,
-      height: isTransposed ? this.originalImg.naturalWidth : this.originalImg.naturalHeight
+      width: isTransposed ? imgH : imgW,
+      height: isTransposed ? imgW : imgH
     };
   }
 
@@ -197,6 +216,10 @@ export class PhotoEditor {
     this.cleanupUrls();
     this.cleanupDepth();
     this.cleanupSkinMask();
+
+    this.isRaw = false;
+    this.rawBuffer = null;
+    this.rawMetadata = null;
 
     // 1. Orijinal dosyanın EXIF ve ICC profil segmentlerini koruma için çıkar
     try {
@@ -246,6 +269,117 @@ export class PhotoEditor {
     this.rotation = 0;
     this.resetSettings();
     this.scheduleRender();
+  }
+
+  /**
+   * RAW (.dng, .cr2, .cr3, .nef, .arw, .raf vb.) dosyasını LibRaw Web Worker ile arka planda çözer.
+   */
+  public async loadRawFile(
+    file: File,
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<RawMetadata> {
+    this.cleanupUrls();
+    this.cleanupDepth();
+    this.cleanupSkinMask();
+
+    this.isRaw = true;
+    const rawBuf = await file.arrayBuffer();
+    this.rawBuffer = rawBuf;
+
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(new URL('./raw/raw.worker.ts', import.meta.url), {
+        type: 'module'
+      });
+
+      const cleanup = () => {
+        worker.terminate();
+      };
+
+      worker.onmessage = async (e: MessageEvent<RawWorkerOutputMessage>) => {
+        const data = e.data;
+        if (data.type === 'progress') {
+          if (onProgress) onProgress(data.percent, data.message);
+        } else if (data.type === 'metadata') {
+          this.rawMetadata = data.metadata;
+        } else if (data.type === 'thumbnail') {
+          // Gömülü JPEG önizlemesi (< 300 ms)
+          try {
+            if (!this.previewImg) {
+              this.previewImg = await createImageBitmap(data.blob);
+              this.rotation = 0;
+              this.scheduleRender();
+            }
+          } catch {}
+        } else if (data.type === 'preview_ready') {
+          cleanup();
+          if (this.previewImg && 'close' in this.previewImg) {
+            this.previewImg.close();
+          }
+          this.previewImg = data.imageBitmap;
+          this.rawMetadata = data.metadata;
+          this.rotation = 0;
+          this.resetSettings();
+          this.scheduleRender();
+          resolve(data.metadata);
+        } else if (data.type === 'error') {
+          cleanup();
+          reject(new Error(data.message));
+        }
+      };
+
+      worker.onerror = (err) => {
+        cleanup();
+        reject(err);
+      };
+
+      const transferBuf = rawBuf.slice(0);
+      worker.postMessage(
+        {
+          type: 'decode',
+          buffer: transferBuf
+        },
+        [transferBuf]
+      );
+    });
+  }
+
+  public async getRawFullResBitmap(
+    onProgress?: (percent: number, message: string) => void
+  ): Promise<ImageBitmap> {
+    if (!this.rawBuffer) throw new Error('RAW dosya tamponu bulunamadı.');
+
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(new URL('./raw/raw.worker.ts', import.meta.url), {
+        type: 'module'
+      });
+
+      worker.onmessage = (e: MessageEvent<RawWorkerOutputMessage>) => {
+        const data = e.data;
+        if (data.type === 'progress') {
+          if (onProgress) onProgress(data.percent, data.message);
+        } else if (data.type === 'full_ready') {
+          worker.terminate();
+          resolve(data.imageBitmap);
+        } else if (data.type === 'error') {
+          worker.terminate();
+          reject(new Error(data.message));
+        }
+      };
+
+      worker.onerror = (err) => {
+        worker.terminate();
+        reject(err);
+      };
+
+      const transferBuf = this.rawBuffer!.slice(0);
+      worker.postMessage(
+        {
+          type: 'export_full',
+          buffer: transferBuf
+        },
+        [transferBuf]
+      );
+    });
   }
 
 
@@ -603,7 +737,7 @@ export class PhotoEditor {
     customQuality?: number,
     onProgress?: (percent: number, message: string) => void
   ): Promise<{ blob: Blob; extension: string; mimeType: string }> {
-    if (!this.originalImg) {
+    if (!this.hasImage) {
       throw new Error('İşlenecek görsel bulunamadı.');
     }
 
@@ -628,10 +762,20 @@ export class PhotoEditor {
     quality: number,
     onProgress?: (percent: number, message: string) => void
   ): Promise<{ blob: Blob; extension: string; mimeType: string }> {
-    if (!this.originalImg) throw new Error('Görsel bulunamadı.');
+    let bitmap: ImageBitmap;
+    if (this.isRaw && this.rawBuffer) {
+      if (onProgress) onProgress(10, 'RAW sensör verisi tam çözünürlükte demosaic ediliyor...');
+      bitmap = await this.getRawFullResBitmap(onProgress);
+    } else if (this.originalImg) {
+      if (onProgress) onProgress(10, 'Görsel Web Worker belleğine aktarılıyor...');
+      bitmap = await createImageBitmap(this.originalImg);
+    } else if (this.previewImg) {
+      if (onProgress) onProgress(10, 'Görsel Web Worker belleğine aktarılıyor...');
+      bitmap = await createImageBitmap(this.previewImg);
+    } else {
+      throw new Error('Görsel bulunamadı.');
+    }
 
-    if (onProgress) onProgress(10, 'Görsel Web Worker belleğine aktarılıyor...');
-    const bitmap = await createImageBitmap(this.originalImg);
     const depthBitmap = this.depthCanvas
       ? await createImageBitmap(this.depthCanvas as CanvasImageSource)
       : null;
@@ -690,13 +834,25 @@ export class PhotoEditor {
     format: ExportFormat,
     quality: number
   ): Promise<{ blob: Blob; extension: string; mimeType: string }> {
-    if (!this.originalImg) {
+    let sourceImg: ImageBitmap | HTMLImageElement;
+    let shouldCloseSource = false;
+
+    if (this.isRaw && this.rawBuffer) {
+      sourceImg = await this.getRawFullResBitmap();
+      shouldCloseSource = true;
+    } else if (this.originalImg) {
+      sourceImg = this.originalImg;
+    } else if (this.previewImg) {
+      sourceImg = this.previewImg as ImageBitmap;
+    } else {
       throw new Error('İşlenecek görsel bulunamadı.');
     }
 
+    const srcW = 'naturalWidth' in sourceImg ? sourceImg.naturalWidth : sourceImg.width;
+    const srcH = 'naturalHeight' in sourceImg ? sourceImg.naturalHeight : sourceImg.height;
     const isTransposed = this.rotation === 90 || this.rotation === 270;
-    const targetWidth = isTransposed ? this.originalImg.naturalHeight : this.originalImg.naturalWidth;
-    const targetHeight = isTransposed ? this.originalImg.naturalWidth : this.originalImg.naturalHeight;
+    const targetWidth = isTransposed ? srcH : srcW;
+    const targetHeight = isTransposed ? srcW : srcH;
 
     const exportCanvas = document.createElement('canvas');
     exportCanvas.width = targetWidth;
@@ -717,7 +873,7 @@ export class PhotoEditor {
     };
 
     try {
-      this.renderPipeline(target, this.originalImg, exportSettings, this.rotation, noisePattern);
+      this.renderPipeline(target, sourceImg, exportSettings, this.rotation, noisePattern);
 
       let blob = await new Promise<Blob>((resolve, reject) => {
         exportCanvas.toBlob(
@@ -751,6 +907,9 @@ export class PhotoEditor {
     } finally {
       exportCanvas.width = 0;
       exportCanvas.height = 0;
+      if (shouldCloseSource && 'close' in sourceImg) {
+        (sourceImg as ImageBitmap).close();
+      }
     }
   }
 
@@ -770,186 +929,26 @@ export class PhotoEditor {
     rotation: RotationDegree,
     noisePattern: CanvasPattern | null
   ): void {
-    const { ctx, width: w, height: h } = target;
-    ctx.clearRect(0, 0, w, h);
-
-    // 👁️ 3D Derinlik Haritası İnceleme Modu (Siyah-Beyaz)
-    if (settings.aiShowDepthMap && this.depthCanvas) {
-      ctx.drawImage(this.depthCanvas as CanvasImageSource, 0, 0, w, h);
-      return;
-    }
-
-    const preset = PRESETS[settings.preset] || PRESETS.none;
-    const isCcd = settings.preset === 'ccd' || settings.preset === 'ccd_y2k';
-
-    // 1. Ham Görsel Çizimi (Sıfır CSS filtresi)
-    ctx.save();
-    ctx.filter = 'none';
-    this.drawImageWithRotation(target, sourceImg, rotation);
-    ctx.restore();
-
-    // 2. MERCEK OPTİĞİ (Işık film düzlemine düşmeden önce mercekten geçer)
-    // 🤖 3D Fiziksel Alan Derinliği & Helios 44M Swirl Optiği
-    if (settings.aiDepthEnabled && this.depthCanvas && settings.swirl === 0) {
-      applyDepthOfField(
-        target,
-        this.depthCanvas,
-        settings.aiFocalDepth,
-        settings.aiDepthAperture
-      );
-    } else if (settings.swirl > 0) {
-      applySwirlyBokeh(
-        target,
-        settings.swirl,
-        settings.aiDepthEnabled ? this.depthCanvas : null,
-        settings.aiFocalDepth,
-        settings.aiDepthAperture
-      );
-    }
-
-    // Radyal Chromatic Aberration (Merkez Netliği Koruması)
-    if (settings.chromatic > 0) {
-      applyChromaticAberration(target, settings.chromatic);
-    }
-
-    // Black Pro-Mist (Yumuşak Sisli Parlama — H&D omuz eğrisinden önce uygulanır ki vurgular patlamasın)
-    if (settings.proMist > 0) {
-      applyBlackProMist(target, settings.proMist);
-    }
-
-    // Mekanik Vinyet (Mercek kenar kararması: cos⁴(θ) düşüş kanunu)
-    if (settings.vignette > 0) {
-      applyVignette(target, settings.vignette);
-    }
-
-    // 3. FİLM EMÜLSİYONU: 650nm Spektral Halasyon + H&D Sensitometri & Omuz Sıkıştırması + 3D LUT Tetrahedral Enterpolasyon
-    const customLut = getCustomCubeLUT();
-    const colorGpuEngine = ColorLutWebGPUEngine.getInstanceSync();
-    let gpuColorApplied = false;
-
-    if (colorGpuEngine) {
-      gpuColorApplied = colorGpuEngine.renderToTarget(target, settings, customLut);
-    }
-
-    if (!gpuColorApplied) {
-      // CPU/2D Yedek Hattı: Önce 650nm Spektral Kırılmalı Halasyon, ardından H&D Eğrisi + 3D LUT Tetrahedral Eşleme
-      if (!isCcd && settings.halation > 0) {
-        applyHalation(target, settings.halation);
-      }
-      applySensitometryAndLUTCPU(target, settings, customLut);
-    }
-
-    // 4. KİMYASAL BANYO & KORUMA KALKANLARI
-    // Bleach Bypass (Gümüş Koruma Banyosu)
-    if (settings.bleachBypass > 0) {
-      applyBleachBypass(target, settings.bleachBypass);
-    }
-
-    // 🛡️ AKILLI EN-BOY ORANI KORUMALI TEN KALKANI (H&D Sensitometrik Doğal Ten Koruması)
-    if (settings.skinProtection > 0) {
-      this.applySkinToneProtection(target, sourceImg, rotation, settings, preset);
-    }
-
-    // 5. CCD Sensör Kusurları veya Analog Film Sızıntı & Gren Katmanı
-    if (isCcd) {
-      if (settings.lightLeak > 0) {
-        applyLightLeak(target, settings.lightLeak);
-      }
-      applyCcdAesthetic(target, { mode: settings.preset as 'ccd' | 'ccd_y2k' });
-    } else {
-      // Işık Sızıntısı (Light Leak)
-      if (settings.lightLeak > 0) {
-        applyLightLeak(target, settings.lightLeak);
-      }
-
-      // 35mm Analog Film Greni: Çerçeve ve tarih damgasından önceki mutlak son katman
-      const activeNoise = (preset.noise || 0) + (settings.grain / 100) * 0.22;
-      if (activeNoise > 0 && noisePattern) {
-        applyFilmGrain(target, noisePattern, activeNoise);
-      }
-    }
-
-    // Çerçeve (Film Border)
-    if (settings.filmBorder !== 'none') {
-      applyFilmBorder(target, settings.filmBorder);
-    }
-
-    // 90'lar Quartz Date Tarih Damgası
-    if (settings.quartzDate) {
-      applyQuartzDate(target, settings.quartzDate, settings.quartzDateText);
-    }
-  }
-
-  private drawImageWithRotation(
-    target: RenderTarget,
-    sourceImg: HTMLImageElement | ImageBitmap,
-    rotation: RotationDegree
-  ): void {
-    const { ctx, width: w, height: h } = target;
+    const isTransposed = rotation === 90 || rotation === 270;
     const srcW = 'naturalWidth' in sourceImg ? sourceImg.naturalWidth : sourceImg.width;
     const srcH = 'naturalHeight' in sourceImg ? sourceImg.naturalHeight : sourceImg.height;
+    const w = isTransposed ? srcH : srcW;
+    const h = isTransposed ? srcW : srcH;
 
-    ctx.save();
-    ctx.translate(w / 2, h / 2);
-    ctx.rotate((rotation * Math.PI) / 180);
-    ctx.drawImage(sourceImg, -srcW / 2, -srcH / 2, srcW, srcH);
-    ctx.restore();
-  }
+    const skinMask =
+      settings.skinProtection > 0
+        ? this.getOrCreateSkinMask(sourceImg, rotation, w, h)
+        : null;
 
-  private applySkinToneProtection(
-    target: RenderTarget,
-    sourceImg: HTMLImageElement | ImageBitmap,
-    rotation: RotationDegree,
-    settings: SliderSettings,
-    preset: PresetDefinition
-  ): void {
-    const { ctx, width: w, height: h } = target;
-    const skinMask = this.getOrCreateSkinMask(sourceImg, rotation, w, h);
-    if (!skinMask) return;
-
-    const cleanSkinCanvas = createCompatibleCanvas(w, h);
-    const sCtx = cleanSkinCanvas.getContext('2d') as CanvasRenderingContext2D | null;
-    if (!sCtx) return;
-
-    const skinTarget: RenderTarget = {
-      canvas: cleanSkinCanvas,
-      ctx: sCtx,
-      width: w,
-      height: h
-    };
-
-    // Ham görüntüyü çiz ve aşırı kontrast/soğuk kaymadan arındırılmış H&D Portra/Pankromatik 3D LUT uygula
-    this.drawImageWithRotation(skinTarget, sourceImg, rotation);
-
-    const isMono = preset.id === 'sb' || preset.id === 'hp5';
-    const skinSettings: SliderSettings = {
-      ...settings,
-      preset: isMono ? 'hp5' : 'analog',
-      contrast: Math.round(settings.contrast * 0.35),
-      shoulder: Math.max(65, settings.shoulder ?? 55),
-      saturation: isMono ? 0 : Math.max(-10, Math.min(12, Math.round(settings.saturation * 0.35))),
-      warmth: isMono ? 0 : Math.max(0, Math.min(18, Math.round(settings.warmth * 0.45))),
-      halation: 0
-    };
-
-    const colorGpuEngine = ColorLutWebGPUEngine.getInstanceSync();
-    const gpuOk = colorGpuEngine ? colorGpuEngine.renderToTarget(skinTarget, skinSettings, null) : false;
-    if (!gpuOk) {
-      applySensitometryAndLUTCPU(skinTarget, skinSettings, null);
-    }
-
-    // Maskeyi uygulayarak yalnızca ten alanlarını izole et
-    sCtx.globalCompositeOperation = 'destination-in';
-    sCtx.drawImage(skinMask as CanvasImageSource, 0, 0);
-
-    // İzole edilen doğal teni hedef tuvale koruma gücü oranında (%0 - %100) harmanla
-    ctx.save();
-    ctx.globalAlpha = Math.min(1.0, Math.max(0, settings.skinProtection / 100));
-    ctx.drawImage(cleanSkinCanvas as CanvasImageSource, 0, 0);
-    ctx.restore();
-
-    cleanSkinCanvas.width = 0;
-    cleanSkinCanvas.height = 0;
+    executeRenderPipeline({
+      target,
+      sourceImg,
+      settings,
+      rotation,
+      noisePattern,
+      depthCanvas: this.depthCanvas,
+      skinMask
+    });
   }
 
   private getOrCreateSkinMask(
@@ -998,7 +997,7 @@ export class PhotoEditor {
 
     const { ctx, width: w, height: h } = target;
     ctx.clearRect(0, 0, w, h);
-    this.drawImageWithRotation(target, sourceImg, rotation);
+    drawImageWithRotation(target, sourceImg, rotation);
   }
 
   private drawComparingWatermark(target: RenderTarget): void {
@@ -1057,6 +1056,9 @@ export class PhotoEditor {
     }
     this.previewImg = null;
     this.originalMetadataSegments = [];
+    this.rawBuffer = null;
+    this.rawMetadata = null;
+    this.isRaw = false;
     this.canvas.width = 0;
     this.canvas.height = 0;
   }

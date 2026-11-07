@@ -8,10 +8,10 @@ export function showToast(
 
   const toast = document.createElement('div');
   const typeStyles = {
-    info: 'bg-m3Surface border-m3Border text-m3Red',
-    success: 'bg-emerald-950/80 border-emerald-800 text-emerald-300',
-    warning: 'bg-amber-950/80 border-amber-800 text-amber-300',
-    error: 'bg-red-950/90 border-red-800 text-red-200'
+    info: 'bg-neutral-900/95 border-amber-600/40 text-amber-300',
+    success: 'bg-emerald-950/90 border-emerald-700/60 text-emerald-300',
+    warning: 'bg-amber-950/90 border-amber-700/60 text-amber-300',
+    error: 'bg-rose-950/95 border-rose-800 text-rose-200'
   };
 
   toast.className = `flex items-center gap-2 px-4 py-2.5 rounded-xl border text-xs font-mono shadow-2xl backdrop-blur-md transition-all duration-300 transform translate-y-2 opacity-0 ${typeStyles[type]}`;

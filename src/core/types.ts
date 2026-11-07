@@ -68,8 +68,19 @@ export interface SliderSettings {
   contrast: number;     // -100 to 100
   shoulder: number;     // 0 to 100 (H&D Film Omzu / Highlight Roll-off Sıkıştırması)
   saturation: number;   // -100 to 100
-  warmth: number;       // -100 to 100
+  warmth: number;       // -100 to 100 (Bradford K Sıcaklık)
   preset: PresetKey;
+
+  // Lightroom İnce Ayarları (Faz 2 & Faz 4)
+  highlights?: number;  // -100 to 100 (Vurgu Kurtarma)
+  shadows?: number;     // -100 to 100 (Gölge Açma)
+  whites?: number;      // -100 to 100 (Beyaz Noktası)
+  blacks?: number;      // -100 to 100 (Siyah Noktası)
+  tint?: number;        // -100 to 100 (Yeşil / Magenta Dengesi)
+  vibrance?: number;    // -100 to 100 (Akıllı Doygunluk)
+  texture?: number;     // 0 to 100 (Mikro Doku)
+  clarity?: number;     // -100 to 100 (Orta Ton Lokal Kontrast)
+  dehaze?: number;      // -100 to 100 (Pus Kırma)
 
   // Film Emülsiyonu & Kimyasal Kusurlar
   halation: number;     // 0 to 100 (650nm Spektral Kırılmalı Halasyon)

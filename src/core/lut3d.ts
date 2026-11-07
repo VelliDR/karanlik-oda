@@ -315,7 +315,12 @@ export function applyHDSensitometryRGB(
   warmth: number,
   saturation: number,
   sensitometry: SensitometryParams,
-  out: [number, number, number]
+  out: [number, number, number],
+  highlights = 0,
+  shadows = 0,
+  whites = 0,
+  blacks = 0,
+  tint = 0
 ): void {
   // 1. sRGB -> Scene Linear
   let lr = srgbToLinear(srgbR);
@@ -329,16 +334,63 @@ export function applyHDSensitometryRGB(
   lg *= expGain;
   lb *= expGain;
 
-  // 3. Bradford / Planckian Kromatik Sıcaklık Adaptasyonu (Lineer Işık Uzayında)
+  // 3. Lightroom İnce Ton Kontrolleri (Lineer Foton Uzayında)
+  const lumaLin = 0.2126 * lr + 0.7152 * lg + 0.0722 * lb;
+
+  // Siyah Noktası (Blacks)
+  if (blacks !== 0) {
+    const bWeight = Math.pow(1.0 - Math.min(1.0, Math.max(0.0, lumaLin / 0.28)), 2.0);
+    const bOffset = (blacks / 100) * 0.075;
+    lr = Math.max(0.0, lr + bOffset * bWeight);
+    lg = Math.max(0.0, lg + bOffset * bWeight);
+    lb = Math.max(0.0, lb + bOffset * bWeight);
+  }
+
+  // Gölgeler (Shadows)
+  if (shadows !== 0) {
+    const sWeight = 1.0 - smoothstep(0.0, 0.45, lumaLin);
+    const sGain = Math.pow(2.0, (shadows / 100) * 1.35);
+    const sBlend = 1.0 + (sGain - 1.0) * sWeight;
+    lr *= sBlend;
+    lg *= sBlend;
+    lb *= sBlend;
+  }
+
+  // Vurgular (Highlights)
+  if (highlights !== 0) {
+    const hWeight = smoothstep(0.22, 1.0, lumaLin);
+    const hGain = Math.pow(2.0, (highlights / 100) * 1.25);
+    const hBlend = 1.0 + (hGain - 1.0) * hWeight;
+    lr *= hBlend;
+    lg *= hBlend;
+    lb *= hBlend;
+  }
+
+  // Beyazlar (Whites)
+  if (whites !== 0) {
+    const wWeight = smoothstep(0.60, 1.0, lumaLin);
+    const wGain = 1.0 + (whites / 100) * 0.45;
+    const wBlend = 1.0 + (wGain - 1.0) * wWeight;
+    lr *= wBlend;
+    lg *= wBlend;
+    lb *= wBlend;
+  }
+
+  // 4. Bradford / Planckian Kromatik Sıcaklık & Tint Adaptasyonu
   if (warmth !== 0) {
     const w = warmth / 100;
-    const rScale = 1.0 + w * 0.24;
-    const gScale = 1.0 + w * 0.03;
-    const bScale = Math.max(0.55, 1.0 - w * 0.26);
-    lr *= rScale;
-    lg *= gScale;
-    lb *= bScale;
+    lr *= 1.0 + w * 0.24;
+    lg *= 1.0 + w * 0.03;
+    lb *= Math.max(0.55, 1.0 - w * 0.26);
   }
+
+  if (tint !== 0) {
+    const t = (tint / 100) * 0.16;
+    lr *= 1.0 + t * 0.5;
+    lg *= 1.0 - t;
+    lb *= 1.0 + t * 0.5;
+  }
+
 
   // 4. H&D Karakteristik Eğri Parametreleri
   const contrastFactor = Math.pow(2.0, (contrast / 100) * 0.58);
@@ -617,6 +669,12 @@ export function applySensitometryAndLUTCPU(
   const shld = settings.shoulder ?? 0;
   const warm = settings.warmth;
   const sat = settings.saturation;
+  const hl = settings.highlights ?? 0;
+  const sh = settings.shadows ?? 0;
+  const wh = settings.whites ?? 0;
+  const bl = settings.blacks ?? 0;
+  const tint = settings.tint ?? 0;
+  const vib = settings.vibrance ?? 0;
 
   if (
     settings.preset === 'none' &&
@@ -624,7 +682,13 @@ export function applySensitometryAndLUTCPU(
     con === 0 &&
     shld === 0 &&
     warm === 0 &&
-    sat === 0
+    sat === 0 &&
+    hl === 0 &&
+    sh === 0 &&
+    wh === 0 &&
+    bl === 0 &&
+    tint === 0 &&
+    vib === 0
   ) {
     return;
   }
@@ -647,16 +711,28 @@ export function applySensitometryAndLUTCPU(
     const gIn = data[i + 1] / 255;
     const bIn = data[i + 2] / 255;
 
-    // 1. H&D Sensitometri & Film Omzu Sıkıştırması
-    applyHDSensitometryRGB(rIn, gIn, bIn, exp, con, shld, warm, 0, sensitometry, hdOut);
+    // 1. H&D Sensitometri, Ton Ayarları & Film Omzu Sıkıştırması
+    applyHDSensitometryRGB(rIn, gIn, bIn, exp, con, shld, warm, 0, sensitometry, hdOut, hl, sh, wh, bl, tint);
 
     // 2. 3D LUT Dörtyüzlü (Tetrahedral) Enterpolasyon
     sampleLUT3DTetrahedral(lut, hdOut[0], hdOut[1], hdOut[2], lutOut);
 
-    // 3. Kullanıcı Doygunluk Kontrolü (Omuz korumalı)
+    // 3. Akıllı Canlılık (Vibrance) ve Doygunluk Kontrolü (Omuz korumalı)
     let rOut = lutOut[0];
     let gOut = lutOut[1];
     let bOut = lutOut[2];
+
+    if (vib !== 0) {
+      const maxC = Math.max(rOut, gOut, bOut);
+      const minC = Math.min(rOut, gOut, bOut);
+      const curSat = (maxC - minC) / Math.max(0.001, maxC);
+      const vibWeight = 1.0 - curSat;
+      const vibGain = 1.0 + (vib / 100) * 0.85 * vibWeight;
+      const lumaV = 0.2126 * rOut + 0.7152 * gOut + 0.0722 * bOut;
+      rOut = clamp01(lumaV + (rOut - lumaV) * vibGain);
+      gOut = clamp01(lumaV + (gOut - lumaV) * vibGain);
+      bOut = clamp01(lumaV + (bOut - lumaV) * vibGain);
+    }
 
     if (sat !== 0) {
       const luma = 0.2126 * rOut + 0.7152 * gOut + 0.0722 * bOut;

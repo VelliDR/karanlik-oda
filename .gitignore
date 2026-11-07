@@ -3,3 +3,8 @@ dist
 dist-ssr
 *.local
 .DS_Store
+tools/
+native/LibRaw/
+native/emsdk/
+native/build/
+test-assets/

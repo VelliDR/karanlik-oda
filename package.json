@@ -32,6 +32,8 @@
     "vite-plugin-pwa": "^2.0.0"
   },
   "dependencies": {
-    "onnxruntime-web": "^1.31.1"
+    "@preact/signals": "^2.11.4",
+    "onnxruntime-web": "^1.31.1",
+    "preact": "^11.2.0"
   }
 }
