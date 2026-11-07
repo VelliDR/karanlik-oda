@@ -1,6 +1,7 @@
 import { CubeLUT3D, RenderTarget, SliderSettings } from '../types';
 import { PRESETS } from '../presets';
 import { getActiveLUT3D } from '../lut3d';
+import { getSharedGPUDevice, isWebGPUSupported } from './gpuDeviceManager';
 
 /**
  * 🎨 WebGPU 3D LUT (texture_3d<f32>), Tetrahedral Enterpolasyon,
@@ -529,12 +530,7 @@ export class ColorLutWebGPUEngine {
   }
 
   public static isSupported(): boolean {
-    return (
-      typeof navigator !== 'undefined' &&
-      'gpu' in navigator &&
-      !!navigator.gpu &&
-      typeof OffscreenCanvas !== 'undefined'
-    );
+    return isWebGPUSupported();
   }
 
   public static async getOrCreate(): Promise<ColorLutWebGPUEngine | null> {
@@ -550,17 +546,9 @@ export class ColorLutWebGPUEngine {
 
     ColorLutWebGPUEngine.initPromise = (async () => {
       try {
-        const adapter = await navigator.gpu.requestAdapter({
-          powerPreference: 'high-performance'
-        });
-        if (!adapter) return null;
+        const device = await getSharedGPUDevice();
+        if (!device) return null;
 
-        const maxTex2D = adapter.limits.maxTextureDimension2D || 8192;
-        const device = await adapter.requestDevice({
-          requiredLimits: {
-            maxTextureDimension2D: maxTex2D
-          }
-        });
         const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
         const engine = new ColorLutWebGPUEngine(device, presentationFormat);
         ColorLutWebGPUEngine.instance = engine;

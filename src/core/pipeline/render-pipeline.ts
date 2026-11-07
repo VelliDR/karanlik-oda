@@ -136,11 +136,12 @@ export function applySkinToneProtection(
  * Karanlık Oda Tekil İşleme Hattı (Unified Render Pipeline)
  *
  * Fiziksel Işık Yolu:
- * 1. Sahne & Mercek Optiği (3D DoF, Helios 44M Swirl, Chromatic Aberration, Black Pro-Mist, Mekanik Vinyet)
+ * 1. Ham Görsel & Mercek Optiği (3D DoF, Helios 44M Swirl, Chromatic Aberration, Black Pro-Mist)
  * 2. Film Emülsiyonu & Taban Kırılması (650nm Spektral Halasyon + H&D S-Eğrisi + 3D LUT Tetrahedral Enterpolasyon)
  * 3. Kimyasal Banyo & Koruma Kalkanları (Bleach Bypass, Akıllı Ten Kalkanı)
- * 4. CCD Sensör Kusurları veya 35mm Nutting-Weibull Film Greni
- * 5. Film Çerçevesi & 90'lar Quartz Date LED Tarih Damgası
+ * 4. Sonlandırıcı Vinyet & Optik Işık Düşümü (Pozlama/gölge ayarları vinyeti bozmaz)
+ * 5. CCD Sensör Kusurları veya 35mm Nutting-Weibull Film Greni (Gren vinyetin üzerine doğal oturur)
+ * 6. Film Çerçevesi & 90'lar Quartz Date LED Tarih Damgası
  */
 export function executeRenderPipeline(options: PipelineRenderOptions): void {
   const {
@@ -229,11 +230,6 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
     applyBlackProMist(target, settings.proMist);
   }
 
-  // Mekanik Vinyet
-  if (settings.vignette > 0) {
-    applyVignette(target, settings.vignette);
-  }
-
   // 3. FİLM EMÜLSİYONU: 650nm Spektral Halasyon + H&D Sensitometri + 3D LUT Tetrahedral Eşleme
   const colorGpuEngine = ColorLutWebGPUEngine.getInstanceSync();
   let gpuColorApplied = false;
@@ -260,7 +256,14 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
     applySkinToneProtection(target, sourceImg, rotation, settings, preset, skinMask);
   }
 
-  // 5. CCD Sensör Kusurları veya Analog Film Sızıntı & Gren Katmanı
+  // 5. SONLANDIRICI VİNYET & IŞIK DÜŞÜMÜ (Lens Edge Falloff)
+  // Renk derecelendirmesi ve ten kalkanından sonra, ancak film greni ve CCD gürültüsünden ÖNCE uygulanır.
+  // Bu sayede pozlama/gölge ayarları vinyeti bozmaz; film greni vinyetin üzerine doğal doku örer.
+  if (settings.vignette > 0) {
+    applyVignette(target, settings.vignette);
+  }
+
+  // 6. CCD Sensör Kusurları veya Analog Film Sızıntı & Gren Katmanı
   if (isCcd) {
     if (settings.lightLeak > 0) {
       applyLightLeak(target, settings.lightLeak);

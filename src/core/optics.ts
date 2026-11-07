@@ -146,9 +146,9 @@ export function generateDepthOfFieldMask(
       const blurFactor = Math.min(1.0, (dist - threshold) / falloff);
       data[i + 3] = Math.round(255 * blurFactor);
     }
-    data[i] = 0;
-    data[i + 1] = 0;
-    data[i + 2] = 0;
+    data[i] = 255;
+    data[i + 1] = 255;
+    data[i + 2] = 255;
   }
 
   sCtx.putImageData(imgData, 0, 0);
@@ -323,10 +323,10 @@ export function applySwirlyBokeh(
       cy,
       maxRadius * 0.88
     );
-    grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    grad.addColorStop(0.35, 'rgba(0, 0, 0, 0.08)');
-    grad.addColorStop(0.7, 'rgba(0, 0, 0, 0.75)');
-    grad.addColorStop(1, 'rgba(0, 0, 0, 1.0)');
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    grad.addColorStop(0.35, 'rgba(255, 255, 255, 0.08)');
+    grad.addColorStop(0.7, 'rgba(255, 255, 255, 0.75)');
+    grad.addColorStop(1, 'rgba(255, 255, 255, 1.0)');
 
     wCtx.fillStyle = grad;
     wCtx.fillRect(0, 0, w, h);

@@ -1,4 +1,5 @@
 import { AnyCanvas, HeliosParams, RenderTarget } from '../types';
+import { getSharedGPUDevice, isWebGPUSupported } from './gpuDeviceManager';
 
 /**
  * 🌀 Helios 44M-4 Dönen Bokeh (Swirl & Cat-Eye) WebGPU Motoru.
@@ -9,6 +10,8 @@ import { AnyCanvas, HeliosParams, RenderTarget } from '../types';
  * - Kedi gözü diyafram vinyeti: Kenarlara doğru radyal eksende basıklık (catEyeCompress).
  * - Fotometrik vurgu patlamaları (Specular Highlights): Örnekleme ortalamasında lüminansa üssel ağırlık (1.0 + pow(luma, 4.0) * 14.0).
  * - Odak kalkanı: Derinlik haritası varsa focalDepth ve aperture üzerinden CoC hesabı; yoksa alan eğriliği (field curvature).
+ * - NaN / Siyah Ekran Koruması: textureSampleLevel (LOD 0) ile non-uniform akış türev hatası engellenmiş,
+ *   merkezde sıfıra bölme (0/0) korumalı güvenli vektör matematiği.
  */
 
 const HELIOS_WGSL_SHADER = /* wgsl */ `
@@ -40,6 +43,8 @@ struct HeliosUniforms {
   hasDepthMap: f32,
   aspectRatio: f32,
   catEye: f32,
+  pad0: vec4<f32>,
+  pad1: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> uniforms: HeliosUniforms;
@@ -49,17 +54,23 @@ struct HeliosUniforms {
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+  // Explicit LOD 0.0 kullanımı (textureSampleLevel):
+  // Non-uniform akışlarda veya erken çıkışlarda ekran türevlerinin NaN dönmesini ve
+  // görselin tamamen siyaha bürünmesini kesin olarak engeller.
+  let baseColor = textureSampleLevel(imageTexture, texSampler, in.uv, 0.0).rgb;
   let intensity = uniforms.intensity;
   if (intensity <= 0.0) {
-    return textureSample(imageTexture, texSampler, in.uv);
+    return vec4<f32>(baseColor, 1.0);
   }
 
-  let aspect = uniforms.aspectRatio;
+  let aspect = max(uniforms.aspectRatio, 0.001);
   // Merkeze göre normalize edilmiş koordinat (en-boy oranı düzeltmeli)
   let centeredUV = (in.uv - vec2<f32>(0.5, 0.5)) * vec2<f32>(aspect, 1.0);
   let dist = length(centeredUV);
 
-  let radVec = select(vec2<f32>(1.0, 0.0), normalize(centeredUV), dist > 0.0001);
+  // Sıfıra bölme (0/0 = NaN) koruması: Merkeze yakın piksellerde normalize(0) NaN üretmez
+  let safeDist = max(dist, 0.0001);
+  let radVec = select(vec2<f32>(1.0, 0.0), centeredUV / safeDist, dist > 0.0001);
   // Merkeze dik teğetsel vektör
   let tanVec = vec2<f32>(-radVec.y, radVec.x);
 
@@ -73,7 +84,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   // Odak Kalkanı (CoC: Circle of Confusion)
   var coc: f32 = 0.0;
   if (uniforms.hasDepthMap > 0.5) {
-    let z = textureSample(depthTexture, texSampler, in.uv).r;
+    let z = textureSampleLevel(depthTexture, texSampler, in.uv, 0.0).r;
     let apertureFactor = uniforms.aperture / 100.0;
     let threshold = 0.35 - apertureFactor * 0.31;
     let diff = abs(z - uniforms.focalDepth);
@@ -87,7 +98,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
   }
 
   if (coc <= 0.001) {
-    return textureSample(imageTexture, texSampler, in.uv);
+    return vec4<f32>(baseColor, 1.0);
   }
 
   // Maksimum bulanıklık yarıçapı (UV alanında)
@@ -112,7 +123,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sampleUV = in.uv + vec2<f32>(sampleOffset.x / aspect, sampleOffset.y);
     let clampedUV = clamp(sampleUV, vec2<f32>(0.0), vec2<f32>(1.0));
 
-    let col = textureSample(imageTexture, texSampler, clampedUV);
+    let col = textureSampleLevel(imageTexture, texSampler, clampedUV, 0.0);
 
     // Fotometrik Vurgu Patlamaları (Specular Highlights):
     // Parlak noktalara üssel ağırlık vererek kremamsı ışık pullarını öne çıkar
@@ -123,7 +134,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     accumWeight += weight;
   }
 
-  let finalRgb = accumColor / accumWeight;
+  let blurredRgb = select(baseColor, accumColor / max(accumWeight, 0.0001), accumWeight > 0.0001);
+  let finalRgb = mix(baseColor, blurredRgb, clamp(coc * 1.2, 0.0, 1.0));
   return vec4<f32>(finalRgb, 1.0);
 }
 `;
@@ -176,10 +188,10 @@ export class HeliosWebGPUEngine {
       addressModeV: 'clamp-to-edge'
     });
 
-    // 8 float = 32 byte
+    // 16 float = 64 byte (16-byte hizalı)
     this.uniformBuffer = this.device.createBuffer({
       label: 'Helios Uniform Buffer',
-      size: 32,
+      size: 64,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
     });
 
@@ -210,12 +222,7 @@ export class HeliosWebGPUEngine {
   }
 
   public static isSupported(): boolean {
-    return (
-      typeof navigator !== 'undefined' &&
-      'gpu' in navigator &&
-      !!navigator.gpu &&
-      typeof OffscreenCanvas !== 'undefined'
-    );
+    return isWebGPUSupported();
   }
 
   public static async getOrCreate(): Promise<HeliosWebGPUEngine | null> {
@@ -231,12 +238,9 @@ export class HeliosWebGPUEngine {
 
     HeliosWebGPUEngine.initPromise = (async () => {
       try {
-        const adapter = await navigator.gpu.requestAdapter({
-          powerPreference: 'high-performance'
-        });
-        if (!adapter) return null;
+        const device = await getSharedGPUDevice();
+        if (!device) return null;
 
-        const device = await adapter.requestDevice();
         const presentationFormat = navigator.gpu.getPreferredCanvasFormat();
         const engine = new HeliosWebGPUEngine(device, presentationFormat);
         HeliosWebGPUEngine.instance = engine;
@@ -328,18 +332,19 @@ export class HeliosWebGPUEngine {
         }
       }
 
-      // 3. Uniform verisi
+      // 3. Uniform verisi (16 float = 64 byte, 16-byte hizalamalı)
       const aspect = w / h;
-      const uniformData = new Float32Array([
-        w,
-        h,
-        params.intensity,
-        params.focalDepth ?? 0.5,
-        params.aperture ?? 50,
-        hasDepth,
-        aspect,
-        params.catEye ?? 100.0
-      ]);
+      const uniformData = new Float32Array(16);
+      uniformData[0] = w;
+      uniformData[1] = h;
+      uniformData[2] = params.intensity;
+      uniformData[3] = params.focalDepth ?? 0.5;
+      uniformData[4] = params.aperture ?? 50;
+      uniformData[5] = hasDepth;
+      uniformData[6] = aspect;
+      uniformData[7] = params.catEye ?? 100.0;
+      // [8..15] pad alanları sıfır kalır
+
       this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
 
       // 4. Bind Group
@@ -402,7 +407,6 @@ export class HeliosWebGPUEngine {
     try {
       this.dummyDepthTexture.destroy();
       this.uniformBuffer.destroy();
-      this.device.destroy();
     } catch {}
     HeliosWebGPUEngine.instance = null;
   }

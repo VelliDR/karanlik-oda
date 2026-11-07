@@ -153,9 +153,11 @@ export class PhotoEditor {
     this.canvas = canvas;
     this.ctx = getOptimal2DContext(canvas);
     // WebGPU motorlarını arka planda erkenden hazırla
-    HeliosWebGPUEngine.getOrCreate();
-    ColorLutWebGPUEngine.getOrCreate().then((engine) => {
-      if (engine && this.hasImage) {
+    Promise.all([
+      HeliosWebGPUEngine.getOrCreate(),
+      ColorLutWebGPUEngine.getOrCreate()
+    ]).then(([helios, colorLut]) => {
+      if ((helios || colorLut) && this.hasImage) {
         this.scheduleRender();
       }
     });
