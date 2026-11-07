@@ -10,8 +10,19 @@ interface PrecisionSliderProps {
   unit?: string;
   accent?: 'amber' | 'emerald' | 'cyan' | 'red' | 'purple';
   description?: string;
+  bipolar?: boolean;
+  disabled?: boolean;
+  formatValue?: (val: number) => string;
   onChange: (val: number) => void;
   onCommit?: (val: number) => void;
+}
+
+function roundToStep(val: number, step: number): number {
+  if (!Number.isFinite(step) || step <= 0 || Number.isInteger(step)) {
+    return val;
+  }
+  const decimals = Math.min(6, Math.max(0, Math.ceil(-Math.log10(step)) + 1));
+  return Number(val.toFixed(decimals));
 }
 
 export function PrecisionSlider({
@@ -24,6 +35,9 @@ export function PrecisionSlider({
   unit = '',
   accent = 'amber',
   description,
+  bipolar,
+  disabled = false,
+  formatValue,
   onChange,
   onCommit
 }: PrecisionSliderProps) {
@@ -31,11 +45,12 @@ export function PrecisionSlider({
   const [editInput, setEditInput] = useState(String(value));
   const prevValRef = useRef(value);
 
-  const isBipolar = min < 0;
+  const isBipolar = bipolar !== undefined ? bipolar : min < 0;
 
   // Haptic feedback when crossing 0
   const handleInput = (e: Event) => {
-    const newVal = parseFloat((e.target as HTMLInputElement).value);
+    if (disabled) return;
+    const newVal = roundToStep(parseFloat((e.target as HTMLInputElement).value), step);
     if (isBipolar && ((prevValRef.current < 0 && newVal >= 0) || (prevValRef.current > 0 && newVal <= 0))) {
       if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
         try { navigator.vibrate(8); } catch {}
@@ -46,12 +61,14 @@ export function PrecisionSlider({
   };
 
   const handleChange = (e: Event) => {
-    const newVal = parseFloat((e.target as HTMLInputElement).value);
+    if (disabled) return;
+    const newVal = roundToStep(parseFloat((e.target as HTMLInputElement).value), step);
     if (onCommit) onCommit(newVal);
   };
 
   // Double click / tap to reset
   const handleReset = () => {
+    if (disabled) return;
     if (typeof navigator !== 'undefined' && 'vibrate' in navigator) {
       try { navigator.vibrate(12); } catch {}
     }
@@ -61,15 +78,17 @@ export function PrecisionSlider({
 
   // Inline numeric input
   const handleValueClick = () => {
-    setEditInput(String(value));
+    if (disabled) return;
+    setEditInput(String(roundToStep(value, step)));
     setIsEditing(true);
   };
 
   const handleEditSubmit = () => {
     setIsEditing(false);
+    if (disabled) return;
     const parsed = parseFloat(editInput);
     if (!isNaN(parsed)) {
-      const clamped = Math.max(min, Math.min(max, parsed));
+      const clamped = roundToStep(Math.max(min, Math.min(max, parsed)), step);
       onChange(clamped);
       if (onCommit) onCommit(clamped);
     }
@@ -84,10 +103,10 @@ export function PrecisionSlider({
   };
 
   // Calculate track highlight percent for custom bipolar fill
+  const range = Math.max(1e-6, max - min);
   let fillLeft = 0;
   let fillWidth = 0;
   if (isBipolar) {
-    const range = max - min;
     const centerPct = ((0 - min) / range) * 100;
     const curPct = ((value - min) / range) * 100;
     if (value >= 0) {
@@ -99,7 +118,7 @@ export function PrecisionSlider({
     }
   } else {
     fillLeft = 0;
-    fillWidth = ((value - min) / (max - min)) * 100;
+    fillWidth = ((value - min) / range) * 100;
   }
 
   // Accent color themes
@@ -111,10 +130,15 @@ export function PrecisionSlider({
     purple: 'text-purple-400 bg-purple-500'
   }[accent];
 
-  const valueColor = value !== defaultValue ? 'text-amber-400 font-bold' : 'text-neutral-400';
+  const isModified = Math.abs(value - defaultValue) > 1e-5;
+  const valueColor = isModified ? 'text-amber-400 font-bold' : 'text-neutral-400';
+
+  const renderedValue = formatValue
+    ? formatValue(value)
+    : `${value > 0 && isBipolar ? `+${roundToStep(value, step)}` : roundToStep(value, step)}${unit}`;
 
   return (
-    <div class="space-y-1.5 select-none py-1">
+    <div class={`space-y-1.5 select-none py-1 transition-opacity ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
       <div class="flex justify-between items-center text-[10px] font-mono">
         <span 
           class="text-neutral-300 font-medium cursor-pointer hover:text-white transition-colors flex items-center gap-1"
@@ -122,7 +146,7 @@ export function PrecisionSlider({
           title="Sıfırlamak için çift tıklayın"
         >
           {label}
-          {value !== defaultValue && (
+          {isModified && (
             <span class="w-1 h-1 rounded-full bg-amber-400"></span>
           )}
         </span>
@@ -130,7 +154,8 @@ export function PrecisionSlider({
         {isEditing ? (
           <input
             type="number"
-            class="w-14 px-1 py-0.5 bg-neutral-900 border border-amber-500 rounded text-amber-400 font-mono text-[10px] text-right outline-none"
+            step={step}
+            class="w-16 px-1 py-0.5 bg-neutral-900 border border-amber-500 rounded text-amber-400 font-mono text-[10px] text-right outline-none"
             value={editInput}
             onInput={(e) => setEditInput((e.target as HTMLInputElement).value)}
             onBlur={handleEditSubmit}
@@ -144,7 +169,7 @@ export function PrecisionSlider({
             onDblClick={handleReset}
             title="Sayı girmek için tıklayın, sıfırlamak için çift tıklayın"
           >
-            {value > 0 && isBipolar ? `+${value}` : value}{unit}
+            {renderedValue}
           </span>
         )}
       </div>
@@ -164,7 +189,7 @@ export function PrecisionSlider({
         {isBipolar && (
           <div 
             class="absolute top-1/2 -translate-y-1/2 w-0.5 h-2 bg-neutral-600 rounded pointer-events-none z-10"
-            style={{ left: '50%' }}
+            style={{ left: `${((0 - min) / range) * 100}%` }}
           />
         )}
 
@@ -175,6 +200,7 @@ export function PrecisionSlider({
           max={max}
           step={step}
           value={value}
+          disabled={disabled}
           onInput={handleInput}
           onChange={handleChange}
           onDblClick={handleReset}
@@ -184,7 +210,7 @@ export function PrecisionSlider({
         {/* Custom draggable thumb visual */}
         <div
           class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3.5 h-3.5 bg-neutral-950 border-2 border-amber-400 rounded-full shadow-md pointer-events-none z-15 transition-transform group-hover:scale-125"
-          style={{ left: `${((value - min) / (max - min)) * 100}%` }}
+          style={{ left: `${((value - min) / range) * 100}%` }}
         />
       </div>
 

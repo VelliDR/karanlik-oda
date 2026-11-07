@@ -8,6 +8,8 @@ import {
   registerEditor,
   syncFromEditor,
   activeTab,
+  workspaceMode,
+  setWorkspaceMode,
   imageLoaded,
   imageFileName,
   smartRecipeAnalyzing,
@@ -20,7 +22,9 @@ import {
 
 import { TopBar } from './components/TopBar';
 import { CanvasViewport } from './components/CanvasViewport';
+import { WorkspaceModeBar } from './components/WorkspaceModeBar';
 import { ToolRail } from './components/ToolRail';
+import { PrintPanel } from './components/PrintPanel';
 import { LightTab } from './components/LightTab';
 import { ColorTab } from './components/ColorTab';
 import { FilmTab } from './components/FilmTab';
@@ -61,6 +65,12 @@ export function App() {
     });
   }, []);
 
+  const restorePrintModeIfActiveOnLoad = () => {
+    if (workspaceMode.value === 'print') {
+      setWorkspaceMode('print');
+    }
+  };
+
   // Process File Loading (RAW, HEIC, JPG, PNG, WebP)
   const handleFile = async (file: File) => {
     if (!editor || !history) return;
@@ -77,7 +87,9 @@ export function App() {
         });
 
         syncFromEditor();
+        restorePrintModeIfActiveOnLoad();
         history.reset(editor.getSnapshot());
+        syncFromEditor();
         showToast(
           `RAW başarıyla banyo edildi: ${metadata.make} ${metadata.model} (${metadata.width}×${metadata.height})`,
           'success',
@@ -98,7 +110,9 @@ export function App() {
         const converted = await convertHeicToLossless(file);
         await editor.loadImageFromBlob(converted);
         syncFromEditor();
+        restorePrintModeIfActiveOnLoad();
         history.reset(editor.getSnapshot());
+        syncFromEditor();
         showToast('HEIC görseli başarıyla banyo istasyonuna alındı!', 'success', 3000);
       } catch (err: unknown) {
         console.error('HEIC yükleme hatası:', err);
@@ -112,7 +126,9 @@ export function App() {
     try {
       await editor.loadImageFromBlob(file);
       syncFromEditor();
+      restorePrintModeIfActiveOnLoad();
       history.reset(editor.getSnapshot());
+      syncFromEditor();
       showToast(`${file.name} başarıyla yüklendi.`, 'info', 2500);
     } catch (err: unknown) {
       console.error('Görsel yükleme hatası:', err);
@@ -193,8 +209,9 @@ export function App() {
     showToast(show ? '3D Derinlik Haritası İnceleme Modu' : 'Normal Görünüm', 'info', 1800);
   };
 
-  // Canvas Tap-to-Focus
+  // Canvas Tap-to-Focus (only active in Develop Mode)
   const handleCanvasClick = (e: MouseEvent) => {
+    if (workspaceMode.value !== 'develop') return;
     if (!editor || !editor.hasImage || !editor.settings.aiDepthEnabled || !editor.hasDepthMap) return;
 
     const canvas = canvasRef.current;
@@ -285,6 +302,7 @@ export function App() {
   };
 
   const currentTab = activeTab.value;
+  const currentMode = workspaceMode.value;
 
   return (
     <div class="min-h-screen flex flex-col justify-between bg-neutral-950 text-neutral-200 selection:bg-amber-500 selection:text-neutral-950">
@@ -315,45 +333,57 @@ export function App() {
             refreshKey={refreshHistogramKey}
           />
 
-          {/* Tool Category Selector Strip (ToolRail) */}
-          <ToolRail />
+          {/* Top-Level Workspace Mode Switcher: Negatif Banyo <-> Kağıda Baskı */}
+          <WorkspaceModeBar />
 
-          {/* Active Tool Category Panel */}
-          <div class="transition-all duration-150">
-            {currentTab === 'light' && <LightTab />}
-            {currentTab === 'color' && <ColorTab />}
-            {currentTab === 'film' && (
-              <FilmTab
-                onLoadCubeLut={handleLoadCubeLut}
-                onAnalyzeSmartRecipe={handleAnalyzeSmartRecipe}
-                onApplySmartRecipe={handleApplySmartRecipe}
-              />
-            )}
-            {currentTab === 'optics' && (
-              <OpticsTab
-                onToggleDepth={handleToggleDepth}
-                onToggleDepthMap={handleToggleDepthMap}
-                onAutoFocus={handleAutoFocus}
-              />
-            )}
-            {currentTab === 'histogram' && (
-              <div class="p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 space-y-2">
-                <span class="text-[10px] font-mono font-bold text-amber-400 flex items-center gap-1.5">
-                  <HistogramIcon class="w-3.5 h-3.5 text-amber-400" />
-                  <span>HİSTOGRAM & KANAL DAĞILIMI</span>
-                </span>
-                <p class="text-[9px] text-neutral-400 font-mono leading-relaxed">
-                  Histogram, fotoğrafınızdaki ışık ve renk dalga boylarının 0 (mutlak siyah) ile 255 (mutlak beyaz) arasındaki dağılımını gösterir. Mavi üçgen gölge detay kaybını (underexposure), kırmızı üçgen ise parlak ton patlamasını (blown highlights) belirtir.
-                </p>
+          {currentMode === 'develop' ? (
+            <>
+              {/* Tool Category Selector Strip (ToolRail) */}
+              <ToolRail />
+
+              {/* Active Tool Category Panel */}
+              <div class="transition-all duration-150">
+                {currentTab === 'light' && <LightTab />}
+                {currentTab === 'color' && <ColorTab />}
+                {currentTab === 'film' && (
+                  <FilmTab
+                    onLoadCubeLut={handleLoadCubeLut}
+                    onAnalyzeSmartRecipe={handleAnalyzeSmartRecipe}
+                    onApplySmartRecipe={handleApplySmartRecipe}
+                  />
+                )}
+                {currentTab === 'optics' && (
+                  <OpticsTab
+                    onToggleDepth={handleToggleDepth}
+                    onToggleDepthMap={handleToggleDepthMap}
+                    onAutoFocus={handleAutoFocus}
+                  />
+                )}
+                {currentTab === 'histogram' && (
+                  <div class="p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 space-y-2">
+                    <span class="text-[10px] font-mono font-bold text-amber-400 flex items-center gap-1.5">
+                      <HistogramIcon class="w-3.5 h-3.5 text-amber-400" />
+                      <span>HİSTOGRAM & KANAL DAĞILIMI</span>
+                    </span>
+                    <p class="text-[9px] text-neutral-400 font-mono leading-relaxed">
+                      Histogram, fotoğrafınızdaki ışık ve renk dalga boylarının 0 (mutlak siyah) ile 255 (mutlak beyaz) arasındaki dağılımını gösterir. Mavi üçgen gölge detay kaybını (underexposure), kırmızı üçgen ise parlak ton patlamasını (blown highlights) belirtir.
+                    </p>
+                  </div>
+                )}
+                {currentTab === 'finishing' && (
+                  <FinishingTab
+                    onExport={handleExport}
+                    isExporting={isExporting}
+                  />
+                )}
               </div>
-            )}
-            {currentTab === 'finishing' && (
-              <FinishingTab
-                onExport={handleExport}
-                isExporting={isExporting}
-              />
-            )}
-          </div>
+            </>
+          ) : (
+            <PrintPanel
+              onExport={handleExport}
+              isExporting={isExporting}
+            />
+          )}
         </div>
       </main>
 
@@ -376,7 +406,7 @@ export function App() {
 
       {/* Darkroom Footer */}
       <footer class="text-center text-[9px] text-neutral-500 font-mono py-2 bg-neutral-950 border-t border-neutral-900">
-        Foton: Karanlık Oda • LibRaw 16-Bit Linear WASM • WebGPU 3D LUT Tetrahedral Engine • Preact Signals
+        Foton: Karanlık Oda • LibRaw 16-Bit Linear WASM • WebGPU 3D LUT & Multigrade Darkroom Engine • Preact Signals
       </footer>
     </div>
   );

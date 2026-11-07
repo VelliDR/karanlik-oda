@@ -19,7 +19,7 @@ export function ToolRail() {
     { id: 'film', label: 'Film', icon: <FilmIcon class="w-3.5 h-3.5" /> },
     { id: 'optics', label: 'Optik', icon: <ApertureIcon class="w-3.5 h-3.5" /> },
     { id: 'histogram', label: 'Histogram', icon: <HistogramIcon class="w-3.5 h-3.5" /> },
-    { id: 'finishing', label: 'Baskı', icon: <StampIcon class="w-3.5 h-3.5" /> }
+    { id: 'finishing', label: 'Bitiş', icon: <StampIcon class="w-3.5 h-3.5" /> }
   ];
 
   return (

@@ -450,3 +450,132 @@ export function CheckIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconP
     </svg>
   );
 }
+
+/** Karanlık Oda Agrandizör (Optik Büyütücü) Simgesi */
+export function EnlargerIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <path d="M4 21h16" />
+      <path d="M6 21V3" />
+      <path d="M6 7h5" />
+      <rect x="11" y="3" width="7" height="5" rx="1" />
+      <path d="M12.5 8l-1 3h6l-1-3" />
+      <path d="M12.5 11l-3.5 10" strokeDasharray="2 2" />
+      <path d="M16.5 11l3.5 10" strokeDasharray="2 2" />
+    </svg>
+  );
+}
+
+/** Fotoğraf Kağıdı ve Banyo Küveti Simgesi */
+export function PaperSheetIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <rect x="4" y="3" width="16" height="18" rx="2" />
+      <rect x="7" y="6" width="10" height="10" rx="0.5" />
+      <path d="M7 18.5h10" />
+    </svg>
+  );
+}
+
+/** Kimyasal Toning / Banyo Beheri Simgesi */
+export function FlaskIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <path d="M9 3h6" />
+      <path d="M10 3v5.4a2 2 0 0 1-.4 1.2L5 16.2A3 3 0 0 0 7.4 21h9.2a3 3 0 0 0 2.4-4.8l-4.6-6.6a2 2 0 0 1-.4-1.2V3" />
+      <path d="M7 15h10" />
+    </svg>
+  );
+}
+
+/** Dodge (Işık Kesici Çubuk / Açma) Simgesi */
+export function DodgeIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <circle cx="9.5" cy="9.5" r="5.5" fill="currentColor" fillOpacity="0.25" />
+      <path d="M13.5 13.5L21 21" />
+    </svg>
+  );
+}
+
+/** Burn (Delikli Kart / Ek Pozlama Karartma) Simgesi */
+export function BurnIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <circle cx="12" cy="12" r="4" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Fırça Haritası Silgisi Simgesi */
+export function EraserIcon({ class: className = 'w-3.5 h-3.5', size = 14 }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      class={className}
+    >
+      <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
+      <path d="M22 21H7" />
+      <path d="m5 11 9 9" />
+    </svg>
+  );
+}

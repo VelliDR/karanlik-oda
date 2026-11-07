@@ -1,5 +1,8 @@
-import { useRef, useEffect } from 'preact/hooks';
+import { useRef, useEffect, useState } from 'preact/hooks';
 import {
+  dodgeBurnRadius,
+  dodgeBurnTool,
+  finishDodgeBurnStroke,
   imageLoaded,
   isComparing,
   setComparing,
@@ -7,10 +10,22 @@ import {
   toggleZoom,
   imageDimensions,
   isRaw,
-  rawMetadata
+  paintDodgeBurnStrokeMove,
+  paintDodgeBurnStrokeStart,
+  rawMetadata,
+  sliderSettings,
+  workspaceMode
 } from '../store';
-import { EyeIcon, ZoomIcon, CameraIcon, FolderIcon } from './Icons';
-
+import { resolvePointerPressure } from '../../core/paper/dodge-burn';
+import {
+  BurnIcon,
+  CameraIcon,
+  DodgeIcon,
+  EraserIcon,
+  EyeIcon,
+  FolderIcon,
+  ZoomIcon
+} from './Icons';
 
 interface CanvasViewportProps {
   canvasRef: { current: HTMLCanvasElement | null };
@@ -27,8 +42,34 @@ export function CanvasViewport({
 }: CanvasViewportProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const dropzoneRef = useRef<HTMLDivElement | null>(null);
+  const activeStrokeRef = useRef<{
+    pointerId: number;
+    lastNormX: number;
+    lastNormY: number;
+  } | null>(null);
+
+  const [brushCursor, setBrushCursor] = useState<{
+    x: number;
+    y: number;
+    diameterPx: number;
+  } | null>(null);
+
   const dims = imageDimensions.value;
   const raw = rawMetadata.value;
+  const isPrintMode = workspaceMode.value === 'print';
+  const activeBrush = dodgeBurnTool.value;
+  const isBrushActive =
+    imageLoaded.value &&
+    isPrintMode &&
+    Boolean(sliderSettings.value.printEnabled) &&
+    activeBrush !== 'off';
+
+  useEffect(() => {
+    if (!isBrushActive) {
+      setBrushCursor(null);
+      activeStrokeRef.current = null;
+    }
+  }, [isBrushActive]);
 
   // Handle Drag & Drop
   useEffect(() => {
@@ -90,6 +131,98 @@ export function CanvasViewport({
     };
   }, []);
 
+  const computePointerCoords = (e: PointerEvent) => {
+    const canvas = canvasRef.current;
+    const wrapper = wrapperRef.current;
+    if (!canvas || !wrapper) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+
+    const normX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const normY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+    const wrapperRect = wrapper.getBoundingClientRect();
+    const scale = isZoomed.value ? 2.0 : 1.0;
+    const cursorX = (e.clientX - wrapperRect.left) / scale;
+    const cursorY = (e.clientY - wrapperRect.top) / scale;
+    const minCanvasSide = Math.min(rect.width, rect.height) / scale;
+    const diameterPx = Math.max(12, 2 * (dodgeBurnRadius.value / 100) * minCanvasSide);
+
+    return { normX, normY, cursorX, cursorY, diameterPx };
+  };
+
+  const handleCanvasPointerDown = (e: PointerEvent) => {
+    if (!isBrushActive) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+
+    const coords = computePointerCoords(e);
+    if (!coords) return;
+
+    e.preventDefault();
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {}
+
+    setBrushCursor({
+      x: coords.cursorX,
+      y: coords.cursorY,
+      diameterPx: coords.diameterPx
+    });
+
+    const pressure = resolvePointerPressure(e);
+    paintDodgeBurnStrokeStart(coords.normX, coords.normY, pressure);
+    activeStrokeRef.current = {
+      pointerId: e.pointerId,
+      lastNormX: coords.normX,
+      lastNormY: coords.normY
+    };
+  };
+
+  const handleCanvasPointerMove = (e: PointerEvent) => {
+    if (!isBrushActive) return;
+    const coords = computePointerCoords(e);
+    if (!coords) return;
+
+    setBrushCursor({
+      x: coords.cursorX,
+      y: coords.cursorY,
+      diameterPx: coords.diameterPx
+    });
+
+    const stroke = activeStrokeRef.current;
+    if (!stroke || stroke.pointerId !== e.pointerId) return;
+
+    e.preventDefault();
+    const pressure = resolvePointerPressure(e);
+    paintDodgeBurnStrokeMove(
+      stroke.lastNormX,
+      stroke.lastNormY,
+      coords.normX,
+      coords.normY,
+      pressure
+    );
+    stroke.lastNormX = coords.normX;
+    stroke.lastNormY = coords.normY;
+  };
+
+  const endBrushStroke = (e: PointerEvent) => {
+    const stroke = activeStrokeRef.current;
+    if (!stroke || stroke.pointerId !== e.pointerId) return;
+
+    activeStrokeRef.current = null;
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {}
+    finishDodgeBurnStroke();
+  };
+
+  const cursorClass = isBrushActive
+    ? 'cursor-none'
+    : isZoomed.value
+    ? 'cursor-zoom-out'
+    : 'cursor-zoom-in';
+
   return (
     <div
       ref={dropzoneRef}
@@ -98,20 +231,50 @@ export function CanvasViewport({
       {/* Zoomable Canvas Wrapper */}
       <div
         ref={wrapperRef}
-        class={`w-full h-full flex items-center justify-center overflow-auto transition-transform duration-200 relative ${
-          isZoomed.value ? 'cursor-zoom-out' : 'cursor-zoom-in'
-        }`}
+        class={`w-full h-full flex items-center justify-center overflow-auto transition-transform duration-200 relative ${cursorClass}`}
         style={isZoomed.value ? { transform: 'scale(2.0)', transformOrigin: 'center center' } : undefined}
       >
         <canvas
           ref={canvasRef}
           id="editor-canvas"
-          onClick={onCanvasClick}
-          class="max-w-full max-h-[320px] lg:max-h-[600px] rounded-xl shadow-2xl bg-black/60 object-contain"
+          onClick={isPrintMode ? undefined : onCanvasClick}
+          onPointerDown={handleCanvasPointerDown}
+          onPointerMove={handleCanvasPointerMove}
+          onPointerUp={endBrushStroke}
+          onPointerCancel={endBrushStroke}
+          onPointerLeave={() => {
+            if (!activeStrokeRef.current) {
+              setBrushCursor(null);
+            }
+          }}
+          class={`max-w-full max-h-[320px] lg:max-h-[600px] rounded-xl shadow-2xl bg-black/60 object-contain ${
+            isBrushActive ? 'touch-none cursor-none' : ''
+          }`}
         />
 
-        {/* 3D Depth Focus Indicator Reticle (Cinema Camera AF Target) */}
-        {focusPoint && (
+        {/* Karanlık Oda Dodge / Burn Yumuşak Fırça İmleci */}
+        {isBrushActive && brushCursor && (
+          <div
+            class={`pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 z-30 rounded-full flex items-center justify-center ${
+              activeBrush === 'dodge'
+                ? 'border border-dashed border-amber-200 bg-amber-100/10 shadow-[0_0_12px_rgba(254,243,199,0.35)]'
+                : activeBrush === 'burn'
+                ? 'border-2 border-amber-500 bg-amber-950/25 shadow-[0_0_12px_rgba(245,158,11,0.45)]'
+                : 'border border-neutral-300 bg-neutral-400/10'
+            }`}
+            style={{
+              left: `${brushCursor.x}px`,
+              top: `${brushCursor.y}px`,
+              width: `${brushCursor.diameterPx}px`,
+              height: `${brushCursor.diameterPx}px`
+            }}
+          >
+            <div class="w-1 h-1 rounded-full bg-amber-400" />
+          </div>
+        )}
+
+        {/* 3D Depth Focus Indicator Reticle (Cinema Camera AF Target — only in Develop Mode) */}
+        {!isPrintMode && focusPoint && (
           <div
             class="pointer-events-none absolute -translate-x-1/2 -translate-y-1/2 z-30 flex flex-col items-center select-none transition-all duration-150"
             style={{ left: `${focusPoint.x}px`, top: `${focusPoint.y}px` }}
@@ -186,6 +349,31 @@ export function CanvasViewport({
               <span class="text-amber-400 font-semibold">{raw.model}</span>
             </>
           )}
+        </div>
+      )}
+
+      {/* Active Dodge / Burn Brush Indicator Pill */}
+      {isBrushActive && (
+        <div class="absolute bottom-4 right-4 z-20 text-[9px] font-mono bg-amber-950/90 text-amber-300 px-2.5 py-1 rounded-lg border border-amber-500/60 backdrop-blur-sm flex items-center gap-2 shadow-lg">
+          {activeBrush === 'dodge' && <DodgeIcon class="w-3 h-3 text-amber-300" />}
+          {activeBrush === 'burn' && <BurnIcon class="w-3 h-3 text-amber-400" />}
+          {activeBrush === 'erase' && <EraserIcon class="w-3 h-3 text-neutral-300" />}
+          <span class="font-bold">
+            {activeBrush === 'dodge'
+              ? 'DODGE (−POZ)'
+              : activeBrush === 'burn'
+              ? 'BURN (+POZ)'
+              : 'HARİTA SİLGİSİ'}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              dodgeBurnTool.value = 'off';
+            }}
+            class="ml-1 px-1.5 py-0.5 rounded bg-neutral-900 hover:bg-neutral-800 text-neutral-200 border border-neutral-700 cursor-pointer"
+          >
+            Kapat
+          </button>
         </div>
       )}
 
