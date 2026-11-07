@@ -1,5 +1,6 @@
 import {
   CubeLUT3D,
+  DodgeBurnMap,
   ExportFormat,
   RenderTarget,
   RotationDegree,
@@ -9,6 +10,7 @@ import { createNoisePattern } from './optics';
 import { setCustomCubeLUT } from './lut3d';
 import { ColorLutWebGPUEngine } from './webgpu/ColorLutWebGPUEngine';
 import { HeliosWebGPUEngine } from './webgpu/HeliosWebGPUEngine';
+import { PaperPrintWebGPUEngine } from './webgpu/PaperPrintWebGPUEngine';
 import { AspectROI } from './aspect-shield';
 import { inject300DpiAndExifToJpeg, inject300DpiToPng } from './metadata';
 import { executeRenderPipeline } from './pipeline/render-pipeline';
@@ -25,6 +27,7 @@ export interface WorkerExportPayload {
   rawDepth?: Float32Array | null;
   depthRoi?: AspectROI | null;
   customLut?: CubeLUT3D | null;
+  dodgeBurnMap?: DodgeBurnMap | null;
 }
 
 export type WorkerMessageToMain =
@@ -44,7 +47,8 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     depthBitmap,
     rawDepth,
     depthRoi,
-    customLut
+    customLut,
+    dodgeBurnMap
   } = e.data;
 
   try {
@@ -62,7 +66,8 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
     // Worker içinde WebGPU destekleniyorsa motorları hazırla
     await Promise.all([
       HeliosWebGPUEngine.getOrCreate(),
-      ColorLutWebGPUEngine.getOrCreate()
+      ColorLutWebGPUEngine.getOrCreate(),
+      PaperPrintWebGPUEngine.getOrCreate()
     ]);
 
     const isTransposed = rotation === 90 || rotation === 270;
@@ -101,7 +106,9 @@ self.onmessage = async (e: MessageEvent<WorkerExportPayload>) => {
       depthBitmap,
       rawDepth,
       depthRoi,
-      customLut
+      customLut,
+      dodgeBurnMap: dodgeBurnMap ?? null,
+      fullDimensions: { width: targetWidth, height: targetHeight }
     });
 
     self.postMessage({

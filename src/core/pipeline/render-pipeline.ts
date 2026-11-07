@@ -1,6 +1,7 @@
 import {
   AnyCanvas,
   CubeLUT3D,
+  DodgeBurnMap,
   PresetDefinition,
   RenderTarget,
   RotationDegree,
@@ -23,7 +24,9 @@ import {
   createCompatibleCanvas
 } from '../optics';
 import { applySensitometryAndLUTCPU, getCustomCubeLUT } from '../lut3d';
+import { applyPaperPrintCPU } from '../paper/paper-cpu';
 import { ColorLutWebGPUEngine } from '../webgpu/ColorLutWebGPUEngine';
+import { PaperPrintWebGPUEngine } from '../webgpu/PaperPrintWebGPUEngine';
 import { AspectROI, generateSkinProtectionMask, projectDepthMapFromRaw } from '../aspect-shield';
 
 export interface PipelineRenderOptions {
@@ -38,6 +41,8 @@ export interface PipelineRenderOptions {
   depthRoi?: AspectROI | null;
   customLut?: CubeLUT3D | null;
   skinMask?: AnyCanvas | null;
+  dodgeBurnMap?: DodgeBurnMap | null;
+  fullDimensions?: { width: number; height: number } | null;
 }
 
 /**
@@ -287,12 +292,27 @@ export function executeRenderPipeline(options: PipelineRenderOptions): void {
     }
   }
 
-  // Çerçeve (Film Border)
+  // 7. KAĞIDA BASKI KATMANI (Faz 1: Multigrade / Split-Grade, Dodge/Burn, Selenyum/Sepya Toning, 300 DPI Kağıt Dokusu)
+  // Baskı katmanı kapalıyken (settings.printEnabled === false) boru hattı maliyeti sıfırdır ve tek piksel değişmez.
+  if (settings.printEnabled) {
+    const paperContext = {
+      dodgeBurnMap: options.dodgeBurnMap ?? null,
+      fullDimensions: options.fullDimensions ?? null
+    };
+    const paperGpuEngine = PaperPrintWebGPUEngine.getInstanceSync();
+    const gpuPaperApplied = paperGpuEngine
+      ? paperGpuEngine.renderToTarget(target, settings, paperContext)
+      : false;
+    if (!gpuPaperApplied) {
+      applyPaperPrintCPU(target, settings, paperContext);
+    }
+  }
+
+  // 8. Çerçeve (Film Border) & 90'lar Quartz Date Tarih Damgası
   if (settings.filmBorder !== 'none') {
     applyFilmBorder(target, settings.filmBorder);
   }
 
-  // 90'lar Quartz Date Tarih Damgası
   if (settings.quartzDate) {
     applyQuartzDate(target, settings.quartzDate, settings.quartzDateText);
   }

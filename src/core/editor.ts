@@ -1,6 +1,7 @@
 import {
   AnyCanvas,
   CubeLUT3D,
+  DodgeBurnMap,
   EditorSnapshot,
   ExportFormat,
   RenderTarget,
@@ -18,8 +19,18 @@ import {
   parseCubeLUT,
   setCustomCubeLUT
 } from './lut3d';
+import {
+  applyDodgeBurnBrushDab,
+  applyDodgeBurnStrokeSegment,
+  BrushDabOptions,
+  cloneDodgeBurnMap,
+  createDodgeBurnMap,
+  hasActiveDodgeBurnData,
+  rotateDodgeBurnMapClockwise
+} from './paper/dodge-burn';
 import { HeliosWebGPUEngine } from './webgpu/HeliosWebGPUEngine';
 import { ColorLutWebGPUEngine } from './webgpu/ColorLutWebGPUEngine';
+import { PaperPrintWebGPUEngine } from './webgpu/PaperPrintWebGPUEngine';
 
 import {
   AspectROI,
@@ -76,6 +87,16 @@ export const DEFAULT_SETTINGS: SliderSettings = {
   aiFocalDepth: 0.5,
   aiShowDepthMap: false,
 
+  printEnabled: false,
+  printExposure: 0,
+  printGrade: 2.0,
+  printSplitGrade: false,
+  printSplitRatio: 0.5,
+  printPaperType: 'rc-glossy',
+  printPaperTone: 0,
+  printSelenium: 0,
+  printSepia: 0,
+
   quartzDate: false,
   quartzDateText: "'98 10 24",
   filmBorder: 'none',
@@ -124,6 +145,9 @@ export class PhotoEditor {
   private isRenderPending = false;
   private noisePattern: CanvasPattern | null = null;
 
+  // 🖨️ Faz 1 Kağıda Baskı: 1/4 Çözünürlüklü Dodge & Burn Poz Haritası
+  private dodgeBurnMap: DodgeBurnMap | null = null;
+
   // 🤖 3D Alan Derinliği & Depth Anything V2 Durumları
   private depthWorker: Worker | null = null;
   private depthRaw: Float32Array | null = null;
@@ -159,9 +183,10 @@ export class PhotoEditor {
     // WebGPU motorlarını arka planda erkenden hazırla
     Promise.all([
       HeliosWebGPUEngine.getOrCreate(),
-      ColorLutWebGPUEngine.getOrCreate()
-    ]).then(([helios, colorLut]) => {
-      if ((helios || colorLut) && this.hasImage) {
+      ColorLutWebGPUEngine.getOrCreate(),
+      PaperPrintWebGPUEngine.getOrCreate()
+    ]).then(([helios, colorLut, paperPrint]) => {
+      if ((helios || colorLut || paperPrint) && this.hasImage) {
         this.scheduleRender();
       }
     });
@@ -222,6 +247,7 @@ export class PhotoEditor {
     this.cleanupUrls();
     this.cleanupDepth();
     this.cleanupSkinMask();
+    this.dodgeBurnMap = null;
 
     this.isRaw = false;
     this.rawBuffer = null;
@@ -287,6 +313,7 @@ export class PhotoEditor {
     this.cleanupUrls();
     this.cleanupDepth();
     this.cleanupSkinMask();
+    this.dodgeBurnMap = null;
 
     this.isRaw = true;
     const rawBuf = await file.arrayBuffer();
@@ -400,6 +427,7 @@ export class PhotoEditor {
 
   public resetSettings(): void {
     this.settings = { ...DEFAULT_SETTINGS };
+    this.dodgeBurnMap = null;
   }
 
   public rotateClockwise(): void {
@@ -407,6 +435,64 @@ export class PhotoEditor {
     this.rotation = ((this.rotation + 90) % 360) as RotationDegree;
     this.cleanupSkinMask();
     this.rotateDepthCanvasClockwise();
+    if (this.dodgeBurnMap) {
+      this.dodgeBurnMap = rotateDodgeBurnMapClockwise(this.dodgeBurnMap);
+    }
+    this.scheduleRender();
+  }
+
+  private getCurrentPreviewDimensions(): { width: number; height: number } | null {
+    const source = this.previewImg || this.originalImg;
+    if (!source) return null;
+    const isTransposed = this.rotation === 90 || this.rotation === 270;
+    const srcW = 'naturalWidth' in source ? source.naturalWidth : source.width;
+    const srcH = 'naturalHeight' in source ? source.naturalHeight : source.height;
+    return {
+      width: isTransposed ? srcH : srcW,
+      height: isTransposed ? srcW : srcH
+    };
+  }
+
+  private ensureDodgeBurnMap(): DodgeBurnMap | null {
+    const dims = this.getCurrentPreviewDimensions();
+    if (!dims || dims.width <= 0 || dims.height <= 0) return null;
+    if (!this.dodgeBurnMap) {
+      this.dodgeBurnMap = createDodgeBurnMap(dims.width, dims.height);
+    }
+    return this.dodgeBurnMap;
+  }
+
+  public getDodgeBurnMap(): DodgeBurnMap | null {
+    return this.dodgeBurnMap;
+  }
+
+  public get hasDodgeBurnChanges(): boolean {
+    return hasActiveDodgeBurnData(this.dodgeBurnMap);
+  }
+
+  public paintDodgeBurnDab(opts: BrushDabOptions): void {
+    const map = this.ensureDodgeBurnMap();
+    if (!map) return;
+    applyDodgeBurnBrushDab(map, opts);
+    this.scheduleRender();
+  }
+
+  public paintDodgeBurnSegment(
+    fromNormX: number,
+    fromNormY: number,
+    toNormX: number,
+    toNormY: number,
+    opts: Omit<BrushDabOptions, 'normX' | 'normY'>
+  ): void {
+    const map = this.ensureDodgeBurnMap();
+    if (!map) return;
+    applyDodgeBurnStrokeSegment(map, fromNormX, fromNormY, toNormX, toNormY, opts);
+    this.scheduleRender();
+  }
+
+  public clearDodgeBurnMap(): void {
+    if (!this.dodgeBurnMap) return;
+    this.dodgeBurnMap = null;
     this.scheduleRender();
   }
 
@@ -438,7 +524,8 @@ export class PhotoEditor {
   public getSnapshot(): EditorSnapshot {
     return {
       settings: { ...this.settings },
-      rotation: this.rotation
+      rotation: this.rotation,
+      dodgeBurnMap: cloneDodgeBurnMap(this.dodgeBurnMap)
     };
   }
 
@@ -446,6 +533,7 @@ export class PhotoEditor {
     const rotationDelta = ((snapshot.rotation - this.rotation + 360) % 360) as RotationDegree;
     this.settings = { ...snapshot.settings };
     this.rotation = snapshot.rotation;
+    this.dodgeBurnMap = cloneDodgeBurnMap(snapshot.dodgeBurnMap ?? null);
 
     if (this.depthCanvas && rotationDelta !== 0) {
       const turns = rotationDelta / 90;
@@ -951,6 +1039,8 @@ export class PhotoEditor {
         reject(err);
       };
 
+      const clonedDodgeBurn = cloneDodgeBurnMap(this.dodgeBurnMap);
+
       const payload = {
         imageBitmap: bitmap,
         settings: { ...this.settings, aiShowDepthMap: false },
@@ -962,13 +1052,17 @@ export class PhotoEditor {
         depthBitmap,
         rawDepth: this.depthRaw ? this.depthRaw.slice(0) : null,
         depthRoi: this.depthRoi,
-        customLut: getCustomCubeLUT()
+        customLut: getCustomCubeLUT(),
+        dodgeBurnMap: clonedDodgeBurn
       };
 
-      // bitmap ve derinlik bitmap nesnelerini transfer et (zero-copy memory transfer!)
+      // bitmap, derinlik bitmap ve dodge/burn tamponunu transfer et (zero-copy memory transfer!)
       const transferList: Transferable[] = [bitmap];
       if (depthBitmap) {
         transferList.push(depthBitmap);
+      }
+      if (clonedDodgeBurn) {
+        transferList.push(clonedDodgeBurn.data.buffer);
       }
       worker.postMessage(payload, transferList);
     });
@@ -1065,6 +1159,7 @@ export class PhotoEditor {
    * 2. Film Emülsiyonu & Taban Kırılması (650nm Spektral Kırılmalı Halasyon + Hurter & Driffield (H&D)
    *    Toe/Shoulder Karakteristik Eğrisi + 33³/65³ 3D LUT Tetrahedral Enterpolasyon)
    * 3. Kimyasal Banyo & Son Katmanlar (Bleach Bypass, Ten Kalkanı, Işık Sızıntısı, 35mm Nutting-Weibull Gren)
+   * 4. Faz 1 Kağıda Baskı (Multigrade / Split-Grade, Dodge/Burn, Selenyum/Sepya Toning, 300 DPI Kağıt Dokusu)
    */
   private renderPipeline(
     target: RenderTarget,
@@ -1091,7 +1186,9 @@ export class PhotoEditor {
       rotation,
       noisePattern,
       depthCanvas: this.depthCanvas,
-      skinMask
+      skinMask,
+      dodgeBurnMap: this.dodgeBurnMap,
+      fullDimensions: this.originalDimensions || { width: w, height: h }
     });
   }
 
@@ -1190,6 +1287,7 @@ export class PhotoEditor {
     this.cleanupUrls();
     this.cleanupDepth();
     this.cleanupSkinMask();
+    this.dodgeBurnMap = null;
     if (this.depthWorker) {
       this.depthWorker.terminate();
       this.depthWorker = null;
