@@ -41,13 +41,13 @@ export function WorkspaceModeBar() {
   };
 
   return (
-    <div class="space-y-2 select-none">
+    <div class="space-y-1.5 select-none shrink-0">
       <div class="bg-neutral-900/95 p-1 rounded-2xl border border-neutral-800 grid grid-cols-3 gap-1 shadow-md">
         <button
           type="button"
           data-mode="develop"
           onClick={handleSelectDevelop}
-          class={`py-2 px-2 rounded-xl text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+          class={`py-1.5 sm:py-2 px-1.5 sm:px-2 rounded-xl text-[9px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
             mode === 'develop'
               ? 'bg-amber-500 text-neutral-950 shadow-md font-extrabold'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-800/70'
@@ -61,7 +61,7 @@ export function WorkspaceModeBar() {
           type="button"
           data-mode="print"
           onClick={handleSelectPrint}
-          class={`py-2 px-2 rounded-xl text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 relative ${
+          class={`py-1.5 sm:py-2 px-1.5 sm:px-2 rounded-xl text-[9px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 relative ${
             mode === 'print'
               ? 'bg-amber-500 text-neutral-950 shadow-md font-extrabold'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-800/70'
@@ -83,7 +83,7 @@ export function WorkspaceModeBar() {
           type="button"
           data-mode="strip"
           onClick={handleSelectStrip}
-          class={`py-2 px-2 rounded-xl text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
+          class={`py-1.5 sm:py-2 px-1.5 sm:px-2 rounded-xl text-[9px] sm:text-[10px] font-mono font-bold transition-all cursor-pointer flex items-center justify-center gap-1 ${
             mode === 'strip'
               ? 'bg-amber-500 text-neutral-950 shadow-md font-extrabold'
               : 'text-neutral-400 hover:text-white hover:bg-neutral-800/70'

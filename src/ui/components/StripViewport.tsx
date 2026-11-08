@@ -191,11 +191,11 @@ export function StripViewport({
   const sharedPresetName = PRESETS[sharedSettings.preset]?.name || 'Ortak Profil';
 
   return (
-    <div class="flex flex-col gap-3 select-none">
+    <div class="flex flex-col gap-2.5 sm:gap-3 select-none h-full min-h-0 overflow-y-auto overscroll-contain pr-1 custom-scrollbar">
       {/* Ana Işıklı Masa / Kontakt Baskı Önizleme Alanı */}
       <div
         ref={dropzoneRef}
-        class="relative min-h-[340px] sm:min-h-[460px] bg-neutral-900/60 border border-neutral-800 rounded-2xl flex items-center justify-center p-3 sm:p-5 overflow-hidden shadow-inner transition-all"
+        class="relative shrink-0 min-h-[260px] h-[34dvh] sm:h-[40dvh] lg:h-[48dvh] bg-neutral-900/60 border border-neutral-800 rounded-2xl flex items-center justify-center p-2 sm:p-4 overflow-hidden shadow-inner transition-all"
       >
         {frames.length === 0 ? (
           <div class="max-w-md text-center space-y-3 py-8 px-4">
@@ -242,17 +242,15 @@ export function StripViewport({
               </div>
             )}
 
-            <div class="w-full h-full flex items-center justify-center pt-7 pb-1 overflow-auto">
+            <div class="w-full h-full min-h-0 flex items-center justify-center pt-7 pb-1 overflow-auto">
               <canvas
                 ref={previewCanvasRef}
                 id="strip-preview-canvas"
                 onClick={handlePreviewCanvasClick}
                 title="Kareyi tek başına düzenlemek için üzerine tıklayın"
-                class={`rounded-lg shadow-2xl border border-neutral-800/80 cursor-pointer transition-opacity ${
-                  cfg.orientation === 'vertical'
-                    ? 'max-h-[68vh] w-auto'
-                    : 'max-w-full max-h-[62vh] h-auto'
-                } ${isRenderingPreview ? 'opacity-80' : 'opacity-100'}`}
+                class={`max-w-full max-h-full object-contain rounded-lg shadow-2xl border border-neutral-800/80 cursor-pointer transition-opacity ${
+                  isRenderingPreview ? 'opacity-80' : 'opacity-100'
+                }`}
               />
             </div>
           </>

@@ -4,12 +4,29 @@ import { isRaw } from '../store';
 interface HistogramProps {
   canvasElement?: HTMLCanvasElement | null;
   refreshKey?: any;
+  collapsible?: boolean;
+  defaultCollapsed?: boolean;
+  showOnDesktopByDefault?: boolean;
 }
 
-export function Histogram({ canvasElement, refreshKey }: HistogramProps) {
+export function Histogram({
+  canvasElement,
+  refreshKey,
+  collapsible = false,
+  defaultCollapsed = false,
+  showOnDesktopByDefault = false
+}: HistogramProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [hasClippingShadows, setHasClippingShadows] = useState(false);
   const [hasClippingHighlights, setHasClippingHighlights] = useState(false);
+
+  const [isCollapsed, setIsCollapsed] = useState(() => {
+    if (!collapsible) return false;
+    if (typeof window !== 'undefined' && showOnDesktopByDefault && window.innerWidth >= 1024) {
+      return false;
+    }
+    return defaultCollapsed;
+  });
 
   useEffect(() => {
     const targetCanvas = canvasElement || (document.getElementById('editor-canvas') as HTMLCanvasElement | null);
@@ -124,50 +141,66 @@ export function Histogram({ canvasElement, refreshKey }: HistogramProps) {
 
   return (
     <div class="relative bg-neutral-950 p-2 rounded-xl border border-neutral-800 overflow-hidden shadow-inner">
-      <div class="flex justify-between items-center text-[9px] font-mono text-neutral-400 mb-1 px-1">
-        <span class="flex items-center gap-1">
+      <div
+        class={`flex justify-between items-center text-[9px] font-mono text-neutral-400 px-1 ${
+          collapsible ? 'cursor-pointer hover:text-neutral-200 select-none' : 'mb-1'
+        }`}
+        onClick={collapsible ? () => setIsCollapsed((c) => !c) : undefined}
+      >
+        <span class="flex items-center gap-1.5 font-bold">
           <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
           RGB / LUMA HİSTOGRAM
         </span>
-        {isRaw.value && (
-          <span class="px-1.5 py-0.2 rounded bg-amber-950/80 border border-amber-600/50 text-amber-300 font-bold text-[8px]">
-            16-BIT RAW
-          </span>
-        )}
+        <div class="flex items-center gap-1.5">
+          {isRaw.value && (
+            <span class="px-1.5 py-0.2 rounded bg-amber-950/80 border border-amber-600/50 text-amber-300 font-bold text-[8px]">
+              16-BIT RAW
+            </span>
+          )}
+          {collapsible && (
+            <span class="text-[8px] text-amber-400/90 font-mono bg-neutral-900 border border-neutral-800 px-1.5 py-0.5 rounded hover:bg-neutral-800 transition-colors">
+              {isCollapsed ? '▼ Aç' : '▲ Gizle'}
+            </span>
+          )}
+        </div>
       </div>
 
-      <div class="relative w-full h-20 bg-neutral-900/60 rounded-lg overflow-hidden flex items-center justify-center">
-        <canvas
-          ref={canvasRef}
-          width={256}
-          height={80}
-          class="w-full h-full object-fill"
-        />
+      {!isCollapsed && (
+        <div class="mt-1.5 space-y-1">
+          <div class="relative w-full h-16 sm:h-20 bg-neutral-900/60 rounded-lg overflow-hidden flex items-center justify-center">
+            <canvas
+              ref={canvasRef}
+              width={256}
+              height={80}
+              class="w-full h-full object-fill"
+            />
 
-        {/* Shadow clipping indicator */}
-        <div 
-          class={`absolute bottom-1 left-1 w-2.5 h-2.5 rounded-sm transition-colors ${
-            hasClippingShadows ? 'bg-blue-500 shadow-sm shadow-blue-400' : 'bg-neutral-800/40'
-          }`}
-          title={hasClippingShadows ? 'Gölge Detay Kaybı (Siyah Kırpılma Var)' : 'Gölgeler Güvende'}
-        />
+            {/* Shadow clipping indicator */}
+            <div 
+              class={`absolute bottom-1 left-1 w-2.5 h-2.5 rounded-sm transition-colors ${
+                hasClippingShadows ? 'bg-blue-500 shadow-sm shadow-blue-400' : 'bg-neutral-800/40'
+              }`}
+              title={hasClippingShadows ? 'Gölge Detay Kaybı (Siyah Kırpılma Var)' : 'Gölgeler Güvende'}
+            />
 
-        {/* Highlight clipping indicator */}
-        <div 
-          class={`absolute top-1 right-1 w-2.5 h-2.5 rounded-sm transition-colors ${
-            hasClippingHighlights ? 'bg-red-500 shadow-sm shadow-red-400 animate-pulse' : 'bg-neutral-800/40'
-          }`}
-          title={hasClippingHighlights ? 'Yüksek Işık Patlaması (Beyaz Kırpılma Var)' : 'Vurgular Güvende'}
-        />
-      </div>
+            {/* Highlight clipping indicator */}
+            <div 
+              class={`absolute top-1 right-1 w-2.5 h-2.5 rounded-sm transition-colors ${
+                hasClippingHighlights ? 'bg-red-500 shadow-sm shadow-red-400 animate-pulse' : 'bg-neutral-800/40'
+              }`}
+              title={hasClippingHighlights ? 'Yüksek Işık Patlaması (Beyaz Kırpılma Var)' : 'Vurgular Güvende'}
+            />
+          </div>
 
-      <div class="flex justify-between text-[7px] font-mono text-neutral-500 mt-1 px-1">
-        <span>Siyahlar (0)</span>
-        <span>Gölgeler</span>
-        <span>%18 Gri</span>
-        <span>Açık Ton</span>
-        <span>Beyazlar (255)</span>
-      </div>
+          <div class="flex justify-between text-[7px] font-mono text-neutral-500 px-1">
+            <span>Siyahlar (0)</span>
+            <span>Gölgeler</span>
+            <span>%18 Gri</span>
+            <span>Açık Ton</span>
+            <span>Beyazlar (255)</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

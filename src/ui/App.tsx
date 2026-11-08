@@ -391,7 +391,7 @@ export function App() {
   const currentMode = workspaceMode.value;
 
   return (
-    <div class="min-h-screen flex flex-col justify-between bg-neutral-950 text-neutral-200 selection:bg-amber-500 selection:text-neutral-950">
+    <div class="h-dvh max-h-dvh flex flex-col justify-between bg-neutral-950 text-neutral-200 selection:bg-amber-500 selection:text-neutral-950 overflow-hidden">
       {/* Top Bar */}
       <TopBar
         onOpenFileSelect={() => {
@@ -406,11 +406,11 @@ export function App() {
       />
 
       {/* Main Workspace Layout */}
-      <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 p-3 sm:p-4 gap-4 max-w-7xl mx-auto w-full items-start">
-        {/* Left: Viewport (8 cols on xl, 7 cols on lg) */}
-        <div class="lg:col-span-7 xl:col-span-8 flex flex-col gap-3">
+      <main class="flex-1 min-h-0 w-full max-w-7xl mx-auto p-2 sm:p-3 lg:p-4 flex flex-col landscape:flex-row lg:flex-row gap-2 sm:gap-3 lg:gap-4 overflow-hidden items-stretch">
+        {/* Left: Viewport (Takes full height & flex-1 on landscape/desktop; pinned top area on mobile portrait) */}
+        <div class="w-full h-[38dvh] xs:h-[40dvh] landscape:h-full lg:h-full landscape:w-auto lg:w-auto landscape:flex-1 lg:flex-1 shrink-0 landscape:shrink min-h-0 min-w-0 flex flex-col overflow-hidden">
           {/* CanvasViewport her zaman DOM'da tutularak PhotoEditor ve WebGPU bağlamı korunur */}
-          <div class={currentMode === 'strip' ? 'hidden' : 'flex flex-col gap-3'}>
+          <div class={currentMode === 'strip' ? 'hidden' : 'w-full h-full min-h-0 flex flex-col'}>
             <CanvasViewport
               canvasRef={canvasRef}
               onFileDrop={handleFile}
@@ -420,34 +420,42 @@ export function App() {
           </div>
 
           {currentMode === 'strip' && (
-            <StripViewport
-              onFilesDrop={handleAddStripFiles}
-              onOpenStripFilePicker={() => stripFileInputRef.current?.click()}
-              isAddingFiles={isAddingStripFiles}
-              addingStatusText={addingStripStatus}
-            />
+            <div class="w-full h-full min-h-0 flex flex-col">
+              <StripViewport
+                onFilesDrop={handleAddStripFiles}
+                onOpenStripFilePicker={() => stripFileInputRef.current?.click()}
+                isAddingFiles={isAddingStripFiles}
+                addingStatusText={addingStripStatus}
+              />
+            </div>
           )}
         </div>
 
-        {/* Right: Lightroom Mobile Style Tool Rail & Controls Dock (4-5 cols) */}
-        <div class="lg:col-span-5 xl:col-span-4 space-y-3">
-          {/* Histogram Display (tekil görüntü modlarında gösterilir) */}
-          {currentMode !== 'strip' && (
-            <Histogram
-              canvasElement={canvasRef.current}
-              refreshKey={refreshHistogramKey}
-            />
-          )}
+        {/* Right: Controls Dock (Scrolls independently; image never moves!) */}
+        <div class="w-full flex-1 landscape:w-[320px] sm:landscape:w-[360px] lg:w-[380px] xl:w-[420px] landscape:h-full lg:h-full shrink-0 flex flex-col min-h-0 overflow-hidden bg-neutral-950/70 rounded-2xl border border-neutral-900/80 p-2 sm:p-2.5 shadow-2xl">
+          {/* Dock Header: Collapsible Histogram + Workspace Mode Bar + ToolRail */}
+          <div class="shrink-0 space-y-2 mb-2">
+            {/* Histogram Display (Collapsible, starts collapsed on mobile, visible on desktop with collapse option) */}
+            {currentMode !== 'strip' && (
+              <Histogram
+                canvasElement={canvasRef.current}
+                refreshKey={refreshHistogramKey}
+                collapsible={true}
+                defaultCollapsed={true}
+                showOnDesktopByDefault={true}
+              />
+            )}
 
-          {/* Top-Level Workspace Mode Switcher: Negatif Banyo <-> Kağıda Baskı <-> Kontakt & Şerit */}
-          <WorkspaceModeBar />
+            {/* Top-Level Workspace Mode Switcher: Negatif Banyo <-> Kağıda Baskı <-> Kontakt & Şerit */}
+            <WorkspaceModeBar />
 
-          {currentMode === 'develop' ? (
-            <>
-              {/* Tool Category Selector Strip (ToolRail) */}
-              <ToolRail />
+            {/* Tool Category Selector Strip (ToolRail) */}
+            {currentMode === 'develop' && <ToolRail />}
+          </div>
 
-              {/* Active Tool Category Panel */}
+          {/* Dedicated Scrollable Tool Panel Area: ONLY this area scrolls when adjusting settings! */}
+          <div class="flex-1 min-h-0 overflow-y-auto overscroll-contain pr-1 custom-scrollbar">
+            {currentMode === 'develop' ? (
               <div class="transition-all duration-150">
                 {currentTab === 'light' && <LightTab />}
                 {currentTab === 'color' && <ColorTab />}
@@ -466,14 +474,21 @@ export function App() {
                   />
                 )}
                 {currentTab === 'histogram' && (
-                  <div class="p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 space-y-2">
-                    <span class="text-[10px] font-mono font-bold text-amber-400 flex items-center gap-1.5">
-                      <HistogramIcon class="w-3.5 h-3.5 text-amber-400" />
-                      <span>HİSTOGRAM & KANAL DAĞILIMI</span>
-                    </span>
-                    <p class="text-[9px] text-neutral-400 font-mono leading-relaxed">
-                      Histogram, fotoğrafınızdaki ışık ve renk dalga boylarının 0 (mutlak siyah) ile 255 (mutlak beyaz) arasındaki dağılımını gösterir. Mavi üçgen gölge detay kaybını (underexposure), kırmızı üçgen ise parlak ton patlamasını (blown highlights) belirtir.
-                    </p>
+                  <div class="p-3.5 bg-neutral-900/90 rounded-2xl border border-neutral-800 space-y-3 shadow-md">
+                    <Histogram
+                      canvasElement={canvasRef.current}
+                      refreshKey={refreshHistogramKey}
+                      collapsible={false}
+                    />
+                    <div class="space-y-1.5 pt-1 border-t border-neutral-800/80">
+                      <span class="text-[10px] font-mono font-bold text-amber-400 flex items-center gap-1.5">
+                        <HistogramIcon class="w-3.5 h-3.5 text-amber-400" />
+                        <span>HİSTOGRAM & KANAL DAĞILIMI</span>
+                      </span>
+                      <p class="text-[9px] text-neutral-400 font-mono leading-relaxed">
+                        Histogram, fotoğrafınızdaki ışık ve renk dalga boylarının 0 (mutlak siyah) ile 255 (mutlak beyaz) arasındaki dağılımını gösterir. Sol alt köşedeki mavi kare gölge detay kaybını (underexposure), sağ üstteki kırmızı kare ise parlak ton patlamasını (blown highlights) belirtir.
+                      </p>
+                    </div>
                   </div>
                 )}
                 {currentTab === 'finishing' && (
@@ -483,20 +498,20 @@ export function App() {
                   />
                 )}
               </div>
-            </>
-          ) : currentMode === 'print' ? (
-            <PrintPanel
-              onExport={handleExport}
-              isExporting={isExporting}
-            />
-          ) : (
-            <ContactStripPanel
-              onOpenStripFilePicker={() => stripFileInputRef.current?.click()}
-              onExportStrip={handleStripExport}
-              isExporting={isExporting}
-              isAddingFiles={isAddingStripFiles}
-            />
-          )}
+            ) : currentMode === 'print' ? (
+              <PrintPanel
+                onExport={handleExport}
+                isExporting={isExporting}
+              />
+            ) : (
+              <ContactStripPanel
+                onOpenStripFilePicker={() => stripFileInputRef.current?.click()}
+                onExportStrip={handleStripExport}
+                isExporting={isExporting}
+                isAddingFiles={isAddingStripFiles}
+              />
+            )}
+          </div>
         </div>
       </main>
 
@@ -535,7 +550,7 @@ export function App() {
       <div id="toast-container" class="fixed bottom-10 right-4 z-50 flex flex-col gap-2 max-w-sm pointer-events-none" />
 
       {/* Darkroom Footer */}
-      <footer class="text-center text-[9px] text-neutral-500 font-mono py-2 bg-neutral-950 border-t border-neutral-900">
+      <footer class="shrink-0 text-center text-[8px] sm:text-[9px] text-neutral-500 font-mono py-1.5 bg-neutral-950 border-t border-neutral-900 hidden xs:block landscape:hidden sm:landscape:block">
         Foton: Karanlık Oda • LibRaw 16-Bit Linear WASM • WebGPU 3D LUT, Kimya & Kontakt Baskı Motoru • Preact Signals
       </footer>
     </div>

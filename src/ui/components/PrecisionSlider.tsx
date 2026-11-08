@@ -204,7 +204,7 @@ export function PrecisionSlider({
           onInput={handleInput}
           onChange={handleChange}
           onDblClick={handleReset}
-          class="w-full h-5 opacity-0 cursor-pointer z-20"
+          class="w-full h-5 opacity-0 cursor-pointer z-20 touch-none"
         />
 
         {/* Custom draggable thumb visual */}

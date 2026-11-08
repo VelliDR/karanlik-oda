@@ -41,7 +41,7 @@ export function TopBar({ onOpenFileSelect, onQuickSave, isSaving }: TopBarProps)
   const canSave = isStripMode ? stripCount >= STRIP_MIN_FRAMES : hasImg;
 
   return (
-    <header class="p-2.5 sm:px-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/90 backdrop-blur sticky top-0 z-30">
+    <header class="p-2 sm:py-2.5 sm:px-4 border-b border-neutral-800 flex justify-between items-center bg-neutral-950/90 backdrop-blur sticky top-0 z-30 shrink-0">
       {/* Brand & Version */}
       <div class="flex items-center gap-2.5">
         <div class="w-8 h-8 rounded-xl bg-amber-950/70 border border-amber-600/40 flex items-center justify-center text-amber-400 shadow-inner">

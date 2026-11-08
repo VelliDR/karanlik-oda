@@ -226,12 +226,12 @@ export function CanvasViewport({
   return (
     <div
       ref={dropzoneRef}
-      class="bg-neutral-900/90 p-2 rounded-2xl border border-neutral-800 flex flex-col justify-center items-center min-h-[360px] lg:h-[640px] relative overflow-hidden select-none shadow-2xl group transition-all"
+      class="bg-neutral-900/90 p-1.5 sm:p-2 rounded-2xl border border-neutral-800 flex flex-col justify-center items-center w-full h-full min-h-0 relative overflow-hidden select-none shadow-2xl group transition-all"
     >
       {/* Zoomable Canvas Wrapper */}
       <div
         ref={wrapperRef}
-        class={`w-full h-full flex items-center justify-center overflow-auto transition-transform duration-200 relative ${cursorClass}`}
+        class={`w-full h-full min-h-0 min-w-0 flex items-center justify-center overflow-auto transition-transform duration-200 relative ${cursorClass}`}
         style={isZoomed.value ? { transform: 'scale(2.0)', transformOrigin: 'center center' } : undefined}
       >
         <canvas
@@ -247,7 +247,7 @@ export function CanvasViewport({
               setBrushCursor(null);
             }
           }}
-          class={`max-w-full max-h-[320px] lg:max-h-[600px] rounded-xl shadow-2xl bg-black/60 object-contain ${
+          class={`max-w-full max-h-full w-auto h-auto rounded-xl shadow-2xl bg-black/60 object-contain ${
             isBrushActive ? 'touch-none cursor-none' : ''
           }`}
         />
@@ -300,36 +300,37 @@ export function CanvasViewport({
 
       {/* Top Overlays: Compare & Zoom */}
       {imageLoaded.value && (
-        <div class="absolute top-4 left-4 right-4 z-20 flex justify-between items-center pointer-events-none">
+        <div class="absolute top-2 left-2 right-2 sm:top-3 sm:left-3 sm:right-3 z-20 flex justify-between items-center pointer-events-none">
           {/* Karşılaştır Butonu */}
           <button
             type="button"
             onPointerDown={() => setComparing(true)}
             onPointerUp={() => setComparing(false)}
             onPointerLeave={() => setComparing(false)}
-            class={`pointer-events-auto flex items-center gap-1.5 text-[10px] font-mono font-bold border px-3 py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
+            class={`pointer-events-auto flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-mono font-bold border px-2 py-1 sm:px-3 sm:py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
               isComparing.value
                 ? 'bg-amber-500 text-neutral-950 border-amber-400 ring-2 ring-amber-500/50'
                 : 'bg-black/75 hover:bg-black/90 text-amber-300 border-neutral-700'
             }`}
             title="Orijinali görmek için basılı tutun (veya Boşluk tuşu)"
           >
-            <EyeIcon class="w-3.5 h-3.5" />
-            <span>{isComparing.value ? 'ORİJİNAL NEGATİF' : 'Karşılaştır (Basılı Tut)'}</span>
+            <EyeIcon class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+            <span class="hidden xs:inline">{isComparing.value ? 'ORİJİNAL NEGATİF' : 'Karşılaştır (Basılı Tut)'}</span>
+            <span class="xs:hidden">{isComparing.value ? 'ORİJİNAL' : 'Karşılaştır'}</span>
           </button>
 
           {/* %100 Büyüteç Butonu */}
           <button
             type="button"
             onClick={toggleZoom}
-            class={`pointer-events-auto flex items-center gap-1.5 text-[10px] font-mono font-bold border px-2.5 py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
+            class={`pointer-events-auto flex items-center gap-1 sm:gap-1.5 text-[9px] sm:text-[10px] font-mono font-bold border px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-xl backdrop-blur-md shadow-lg active:scale-95 transition-all cursor-pointer ${
               isZoomed.value
                 ? 'bg-amber-500 text-neutral-950 border-amber-400'
                 : 'bg-black/75 hover:bg-black/90 text-neutral-300 hover:text-white border-neutral-700'
             }`}
             title="%100 Piksel Gren ve Netlik İnceleme"
           >
-            <ZoomIcon class="w-3.5 h-3.5" />
+            <ZoomIcon class="w-3 h-3 sm:w-3.5 sm:h-3.5" />
             <span>{isZoomed.value ? '%100 Büyütüldü' : '%100 Büyüteç'}</span>
           </button>
         </div>
@@ -337,7 +338,7 @@ export function CanvasViewport({
 
       {/* Resolution & Color Space Badge */}
       {imageLoaded.value && (
-        <div class="absolute bottom-4 left-4 z-20 text-[9px] font-mono bg-black/75 text-neutral-300 px-2.5 py-1 rounded-lg border border-neutral-700 backdrop-blur-sm flex items-center gap-2">
+        <div class="absolute bottom-2 left-2 sm:bottom-3 sm:left-3 z-20 text-[8px] sm:text-[9px] font-mono bg-black/75 text-neutral-300 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-neutral-700 backdrop-blur-sm flex items-center gap-1.5 sm:gap-2">
           <span>{dims.width} × {dims.height}</span>
           <span class="text-neutral-500">•</span>
           <span class="text-emerald-400 font-bold">
@@ -345,8 +346,8 @@ export function CanvasViewport({
           </span>
           {isRaw.value && raw && (
             <>
-              <span class="text-neutral-500">•</span>
-              <span class="text-amber-400 font-semibold">{raw.model}</span>
+              <span class="text-neutral-500 hidden sm:inline">•</span>
+              <span class="text-amber-400 font-semibold hidden sm:inline">{raw.model}</span>
             </>
           )}
         </div>
@@ -354,7 +355,7 @@ export function CanvasViewport({
 
       {/* Active Dodge / Burn Brush Indicator Pill */}
       {isBrushActive && (
-        <div class="absolute bottom-4 right-4 z-20 text-[9px] font-mono bg-amber-950/90 text-amber-300 px-2.5 py-1 rounded-lg border border-amber-500/60 backdrop-blur-sm flex items-center gap-2 shadow-lg">
+        <div class="absolute bottom-2 right-2 sm:bottom-3 sm:right-3 z-20 text-[8px] sm:text-[9px] font-mono bg-amber-950/90 text-amber-300 px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg border border-amber-500/60 backdrop-blur-sm flex items-center gap-1.5 sm:gap-2 shadow-lg">
           {activeBrush === 'dodge' && <DodgeIcon class="w-3 h-3 text-amber-300" />}
           {activeBrush === 'burn' && <BurnIcon class="w-3 h-3 text-amber-400" />}
           {activeBrush === 'erase' && <EraserIcon class="w-3 h-3 text-neutral-300" />}
@@ -384,18 +385,18 @@ export function CanvasViewport({
             const input = document.getElementById('global-file-input') as HTMLInputElement | null;
             input?.click();
           }}
-          class="absolute inset-0 flex flex-col justify-center items-center text-center p-6 bg-neutral-900/95 rounded-2xl cursor-pointer hover:bg-neutral-900 transition-colors"
+          class="absolute inset-0 flex flex-col justify-center items-center text-center p-3 sm:p-6 bg-neutral-900/95 rounded-2xl cursor-pointer hover:bg-neutral-900 transition-colors"
         >
-          <div class="w-16 h-16 rounded-2xl bg-neutral-800 border border-neutral-700 flex items-center justify-center mb-3 shadow-lg group-hover:scale-105 transition-transform">
-            <CameraIcon class="w-8 h-8 text-neutral-400" />
+          <div class="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-neutral-800 border border-neutral-700 flex items-center justify-center mb-2 sm:mb-3 shadow-lg group-hover:scale-105 transition-transform">
+            <CameraIcon class="w-6 h-6 sm:w-8 sm:h-8 text-neutral-400" />
           </div>
-          <p class="text-xs font-bold text-white font-mono">
+          <p class="text-[11px] sm:text-xs font-bold text-white font-mono">
             Banyo edilecek bir fotoğraf seçin veya sürükleyip bırakın
           </p>
-          <p class="text-[10px] text-amber-400/80 mt-1 font-mono">
+          <p class="text-[9px] sm:text-[10px] text-amber-400/80 mt-1 font-mono">
             RAW (.DNG, .CR2, .CR3, .NEF, .ARW, .RAF), Apple HEIC, JPG, PNG
           </p>
-          <span class="mt-4 px-3.5 py-2 rounded-xl text-[10px] font-mono font-bold bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 transition-all flex items-center gap-1.5 shadow-sm">
+          <span class="mt-2.5 sm:mt-4 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-[9px] sm:text-[10px] font-mono font-bold bg-amber-500/20 border border-amber-500/40 text-amber-300 hover:bg-amber-500/30 transition-all flex items-center gap-1.5 shadow-sm">
             <FolderIcon class="w-3.5 h-3.5" />
             <span>Bilgisayardan / Galeriden Seç</span>
           </span>
