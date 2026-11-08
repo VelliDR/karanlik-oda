@@ -28,18 +28,13 @@ export interface LibRawWasmModule {
 let wasmModulePromise: Promise<LibRawWasmModule> | null = null;
 
 function getWasmUrls(): { jsUrl: string; wasmUrl: string } {
-  let rootUrl = '/';
-  if (typeof self !== 'undefined' && self.location) {
-    const loc = self.location.href;
-    if (loc.includes('/assets/')) {
-      rootUrl = loc.substring(0, loc.indexOf('/assets/')) + '/';
-    } else {
-      rootUrl = loc.substring(0, loc.lastIndexOf('/') + 1);
-    }
+  let origin = 'http://localhost:5173';
+  if (typeof self !== 'undefined' && self.location && self.location.origin) {
+    origin = self.location.origin;
   }
   return {
-    jsUrl: new URL('wasm/libraw.js', rootUrl).href,
-    wasmUrl: new URL('wasm/libraw.wasm', rootUrl).href
+    jsUrl: new URL('/wasm/libraw.js', origin).href,
+    wasmUrl: new URL('/wasm/libraw.wasm', origin).href
   };
 }
 
